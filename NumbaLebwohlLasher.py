@@ -32,7 +32,6 @@ import matplotlib as mpl
 #=======================================================================
 def initdat(nmax):
     """ 
-    
     Arguments:
       nmax (int) = size of lattice to create (nmax,nmax).
     Description:
@@ -44,6 +43,8 @@ def initdat(nmax):
     """
     arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
     return arr
+  
+  
 #=======================================================================
 def plotdat(arr,pflag,nmax):
     """
@@ -64,6 +65,7 @@ def plotdat(arr,pflag,nmax):
 	Returns:
       NULL
     """
+    # no plotting
     if pflag==0:
         return
     u = np.cos(arr)
@@ -71,16 +73,21 @@ def plotdat(arr,pflag,nmax):
     x = np.arange(nmax)
     y = np.arange(nmax)
     cols = np.zeros((nmax,nmax))
+    
     if pflag==1: # colour the arrows according to energy
         mpl.rc('image', cmap='rainbow')
+        
+        # HERE - CYTHONISE OR MORE EFFICIENT WAY OF CALCULATING MIN/MAX
         for i in range(nmax):
             for j in range(nmax):
                 cols[i,j] = one_energy(arr,i,j,nmax)
         norm = plt.Normalize(cols.min(), cols.max())
+        
     elif pflag==2: # colour the arrows according to angle
         mpl.rc('image', cmap='hsv')
         cols = arr%np.pi
         norm = plt.Normalize(vmin=0, vmax=np.pi)
+        
     else:
         mpl.rc('image', cmap='gist_gray')
         cols = np.zeros_like(arr)
@@ -88,9 +95,13 @@ def plotdat(arr,pflag,nmax):
 
     quiveropts = dict(headlength=0,pivot='middle',headwidth=1,scale=1.1*nmax)
     fig, ax = plt.subplots()
+    
+    # WHY IS THIS SET EQUAL TO q?
     q = ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
     ax.set_aspect('equal')
     plt.show()
+    
+    
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
@@ -128,6 +139,8 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     for i in range(nsteps+1):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
+    
+    
 #=======================================================================
 def one_energy(arr,ix,iy,nmax):
     """
@@ -153,6 +166,9 @@ def one_energy(arr,ix,iy,nmax):
 # Add together the 4 neighbour contributions
 # to the energy
 #
+
+# HERE
+# PARALLELISE
     ang = arr[ix,iy]-arr[ixp,iy]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     ang = arr[ix,iy]-arr[ixm,iy]
@@ -162,6 +178,8 @@ def one_energy(arr,ix,iy,nmax):
     ang = arr[ix,iy]-arr[ix,iym]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
+  
+  
 #=======================================================================
 def all_energy(arr,nmax):
     """
@@ -179,6 +197,8 @@ def all_energy(arr,nmax):
         for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
+  
+  
 #=======================================================================
 def get_order(arr,nmax):
     """
@@ -207,6 +227,8 @@ def get_order(arr,nmax):
     Qab = Qab/(2*nmax*nmax)
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
+  
+  
 #=======================================================================
 def MC_step(arr,Ts,nmax):
     """
@@ -254,6 +276,8 @@ def MC_step(arr,Ts,nmax):
                 else:
                     arr[ix,iy] -= ang
     return accept/(nmax*nmax)
+  
+  
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -273,9 +297,9 @@ def main(program, nsteps, nmax, temp, pflag):
     # Plot initial frame of lattice
     plotdat(lattice,pflag,nmax)
     # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1,dtype=np.dtype)
-    ratio = np.zeros(nsteps+1,dtype=np.dtype)
-    order = np.zeros(nsteps+1,dtype=np.dtype)
+    energy = np.zeros(nsteps+1,dtype=np.float64)
+    ratio = np.zeros(nsteps+1,dtype=np.float64)
+    order = np.zeros(nsteps+1,dtype=np.float64)
     # Set initial values in arrays
     energy[0] = all_energy(lattice,nmax)
     ratio[0] = 0.5 # ideal value
@@ -295,6 +319,8 @@ def main(program, nsteps, nmax, temp, pflag):
     # Plot final frame of lattice and generate output file
     savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
+    
+    
 #=======================================================================
 # Main part of program, getting command line arguments and calling
 # main simulation function.
