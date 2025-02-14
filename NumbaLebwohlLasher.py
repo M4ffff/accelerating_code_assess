@@ -29,6 +29,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from numba import jit
+
 #=======================================================================
 def initdat(nmax):
     """ 
@@ -142,6 +144,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     
     
 #=======================================================================
+@jit(nopython=True)
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
@@ -230,7 +233,8 @@ def get_order(arr,nmax):
   
   
 #=======================================================================
-def MC_step(arr,Ts,nmax):
+@jit(nopython=True)
+def MC_step(arr,Ts,nmax, accept, xran, yran, aran):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -251,11 +255,7 @@ def MC_step(arr,Ts,nmax):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    scale=0.1+Ts
-    accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+
     for i in range(nmax):
         for j in range(nmax):
             ix = xran[i,j]
@@ -277,7 +277,7 @@ def MC_step(arr,Ts,nmax):
                     arr[ix,iy] -= ang
     return accept/(nmax*nmax)
   
-  
+ 
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -307,8 +307,13 @@ def main(program, nsteps, nmax, temp, pflag):
 
     # Begin doing and timing some MC steps.
     initial = time.time()
+    scale=0.1+temp
+    accept = 0
+    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
+        ratio[it] = MC_step(lattice, temp, nmax, accept, xran, yran, aran)
         energy[it] = all_energy(lattice,nmax)
         order[it] = get_order(lattice,nmax)
     final = time.time()
