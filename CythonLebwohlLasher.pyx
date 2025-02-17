@@ -203,6 +203,8 @@ def all_energy(double[:,:] arr, int nmax):
     """
     cdef:
       double enall = 0.0
+      int i 
+      int j
     for i in range(nmax):
         for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
@@ -229,7 +231,10 @@ def get_order(double[:,:] arr, int nmax):
       double[:] eigenvalues
       double[:,:] Qab = np.zeros((3,3))
       double[:,:] delta  = np.eye(3,3)
-
+      int a 
+      int b
+      int i 
+      int j
 
     # Qab = np.zeros((3,3))
     # delta = np.eye(3,3)
@@ -276,12 +281,19 @@ def MC_step(double[:,:] arr, double Ts, int nmax):
       long[:,:] xran
       long[:,:] yran
       double[:,:] aran
+      int i 
+      int j
+      double en0 
+      double en1
+      int ix 
+      int iy 
+      double ang
 
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
     for i in range(nmax):
-        for j in range(nmax):
+        for j in range(nmax): 
             ix = xran[i,j]
             iy = yran[i,j]
             ang = aran[i,j]
@@ -321,7 +333,7 @@ def main(str program, int nsteps, int nmax, double temp, int pflag):
         double[:] energy = np.zeros(nsteps+1,dtype=np.float64)
         double[:] ratio = np.zeros(nsteps+1,dtype=np.float64)
         double[:] order = np.zeros(nsteps+1,dtype=np.float64)
-        
+        int it
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice
