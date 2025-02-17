@@ -29,6 +29,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from libc.math cimport sqrt
+from cython.parallel cimport prange
+cimport openmp
+
 #=======================================================================
 def initdat(nmax):
     """ 
@@ -279,7 +283,7 @@ def MC_step(arr,Ts,nmax):
   
   
 #=======================================================================
-def main(program, nsteps, nmax, temp, pflag):
+def main(program, int nsteps, int nmax, double temp, int pflag):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -292,14 +296,20 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
+    cdef:
+        double[:, :] lattice 
+        double[:] energy = np.zeros(nsteps+1,dtype=np.float64)
+        double[:] ratio = np.zeros(nsteps+1,dtype=np.float64)
+        double[:] order = np.zeros(nsteps+1,dtype=np.float64)
+        
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice
     plotdat(lattice,pflag,nmax)
     # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1,dtype=np.float64)
-    ratio = np.zeros(nsteps+1,dtype=np.float64)
-    order = np.zeros(nsteps+1,dtype=np.float64)
+    # energy = np.zeros(nsteps+1,dtype=np.float64)
+    # ratio = np.zeros(nsteps+1,dtype=np.float64)
+    # order = np.zeros(nsteps+1,dtype=np.float64)
     # Set initial values in arrays
     energy[0] = all_energy(lattice,nmax)
     ratio[0] = 0.5 # ideal value
@@ -317,7 +327,7 @@ def main(program, nsteps, nmax, temp, pflag):
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
     
     
