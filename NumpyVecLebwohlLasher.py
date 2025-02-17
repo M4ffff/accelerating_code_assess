@@ -179,9 +179,48 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
   
+#=======================================================================
+def one_energy_vectorised(arr):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  ix (int) = x lattice coordinate of cell;
+	  iy (int) = y lattice coordinate of cell;
+      nmax (int) = side length of square lattice.
+    Description:
+      Function that computes the energy of a single cell of the
+      lattice taking into account periodic boundaries.  Working with
+      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
+      equation (1) in the project notes.
+	Returns:
+	  en (float) = reduced energy of cell.
+    """
+    en = np.zeros(arr.shape)
+    # ixp = (ix+1)%nmax # These are the coordinates
+    # ixm = (ix-1)%nmax # of the neighbours
+    # iyp = (iy+1)%nmax # with wraparound
+    # iym = (iy-1)%nmax #
+#
+# Add together the 4 neighbour contributions
+# to the energy
+#
+
+# HERE
+# PARALLELISE
+    ang1 = arr - np.roll(arr, -1, axis=1)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang1)**2) )
+    ang2 = arr - np.roll(arr, 1, axis=1)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang2)**2) )
+    ang3 = arr - np.roll(arr, -1, axis=0)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang3)**2) )
+    ang4 = arr - np.roll(arr, 1, axis=0)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang4)**2) )
+    return en
+  
+  
   
 #=======================================================================
-def all_energy(arr,nmax):
+def all_energy(arr):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -192,11 +231,9 @@ def all_energy(arr,nmax):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
-    for i in range(nmax):
-        for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
-    return enall
+    # enall = 0.0
+    # enall = np.sum(one_energy_vectorised(arr))
+    return np.sum(one_energy_vectorised(arr))
   
   
 #=======================================================================
@@ -219,8 +256,7 @@ def get_order(arr,nmax):
     # put it in a (3,i,j) array.
     #
     lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    # print(lab[0].shape)
-    # print(lab[1].shape)
+
     for a in range(3):
         for b in range(3):
             Qab[a,b] = np.sum(3*lab[a]*lab[b]) - delta[a,b]
@@ -301,7 +337,7 @@ def main(program, nsteps, nmax, temp, pflag):
     ratio = np.zeros(nsteps+1,dtype=np.float64)
     order = np.zeros(nsteps+1,dtype=np.float64)
     # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
+    energy[0] = all_energy(lattice)
     ratio[0] = 0.5 # ideal value
     order[0] = get_order(lattice,nmax)
 
@@ -309,7 +345,7 @@ def main(program, nsteps, nmax, temp, pflag):
     initial = time.time()
     for it in range(1,nsteps+1):
         ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
+        energy[it] = all_energy(lattice)
         order[it] = get_order(lattice,nmax)
     final = time.time()
     runtime = final-initial
