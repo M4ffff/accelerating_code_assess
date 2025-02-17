@@ -219,16 +219,16 @@ def get_order(arr,nmax):
     # put it in a (3,i,j) array.
     #
     lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    # print(lab[0].shape)
+    # print(lab[1].shape)
     for a in range(3):
         for b in range(3):
-            for i in range(nmax):
-                for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+            Qab[a,b] = np.sum(3*lab[a]*lab[b]) - delta[a,b]
     Qab = Qab/(2*nmax*nmax)
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
   
-  
+  # 
 #=======================================================================
 def MC_step(arr,Ts,nmax):
     """
