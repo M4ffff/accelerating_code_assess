@@ -290,20 +290,22 @@ def MC_step(arr,Ts,nmax):
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    
+    en0 = one_energy_vectorised(arr)
+    
     for i in range(nmax):
         for j in range(nmax):
             ix = xran[i,j]
             iy = yran[i,j]
             ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
             arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
+            if en1<=en0[ix, iy]:
                 accept += 1
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+                boltz = np.exp( -(en1 - en0[ix, iy]) / Ts )
 
                 if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1
