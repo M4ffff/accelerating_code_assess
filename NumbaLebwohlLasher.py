@@ -29,7 +29,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from numba import jit
+from numba import jit, prange
 
 #=======================================================================
 def initdat(nmax):
@@ -237,7 +237,7 @@ def all_energy(arr):
     return np.sum(one_energy_vectorised(arr))
   
  
-@jit(nopython=True) 
+@jit(nopython=True, parallel=True) 
 def get_order_loop(arr,nmax):
     Qab = np.zeros((3,3))
     delta = np.eye(3,3)
@@ -247,8 +247,8 @@ def get_order_loop(arr,nmax):
     #
     lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
 
-    for a in range(3):
-        for b in range(3):
+    for a in prange(3):
+        for b in prange(3):
             Qab[a,b] = np.sum(3*lab[a]*lab[b]) - delta[a,b]
     Qab = Qab/(2*nmax*nmax)
     return Qab
@@ -297,20 +297,21 @@ def MC_step(arr,Ts,nmax):
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    en0 = one_energy_vectorised(arr)
+    
     for i in range(nmax):
         for j in range(nmax):
             ix = xran[i,j]
             iy = yran[i,j]
             ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
             arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
+            if en1<=en0[ix, iy]:
                 accept += 1
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+                boltz = np.exp( -(en1 - en0[ix, iy]) / Ts )
 
                 if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1
@@ -358,7 +359,7 @@ def main(program, nsteps, nmax, temp, pflag):
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
     
     
