@@ -34,7 +34,7 @@ from cython.parallel cimport prange
 cimport openmp
 
 #=======================================================================
-def initdat(nmax):
+def initdat(int nmax):
     """ 
     Arguments:
       nmax (int) = size of lattice to create (nmax,nmax).
@@ -45,6 +45,9 @@ def initdat(nmax):
 	Returns:
 	  arr (float(nmax,nmax)) = array to hold lattice.
     """
+    cdef:
+        double[:, :] arr 
+
     arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
     return arr
   
@@ -146,7 +149,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     
     
 #=======================================================================
-def one_energy(arr,ix,iy,nmax):
+def one_energy(double[:,:] arr, int ix, int iy, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -161,11 +164,13 @@ def one_energy(arr,ix,iy,nmax):
 	Returns:
 	  en (float) = reduced energy of cell.
     """
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
+    cdef: 
+      double en = 0.0
+      int ixr = (ix+1)%nmax # These are the coordinates
+      int ixl = (ix-1)%nmax # of the neighbours
+      int iyu = (iy+1)%nmax # with wraparound
+      int iyd = (iy-1)%nmax #
+      double ang
 #
 # Add together the 4 neighbour contributions
 # to the energy
@@ -173,19 +178,19 @@ def one_energy(arr,ix,iy,nmax):
 
 # HERE
 # PARALLELISE
-    ang = arr[ix,iy]-arr[ixp,iy]
+    ang = arr[ix,iy]-arr[ixr,iy]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
+    ang = arr[ix,iy]-arr[ixl,iy]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
+    ang = arr[ix,iy]-arr[ix,iyu]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
+    ang = arr[ix,iy]-arr[ix,iyd]
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
   
   
 #=======================================================================
-def all_energy(arr,nmax):
+def all_energy(double[:,:] arr, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -196,7 +201,8 @@ def all_energy(arr,nmax):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
+    cdef:
+      double enall = 0.0
     for i in range(nmax):
         for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
@@ -204,7 +210,7 @@ def all_energy(arr,nmax):
   
   
 #=======================================================================
-def get_order(arr,nmax):
+def get_order(double[:,:] arr, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -216,8 +222,17 @@ def get_order(arr,nmax):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
+    cdef:
+      int factor = (2*nmax*nmax)
+      double max_val
+      # double[:,:] eigenvectors
+      double[:] eigenvalues
+      double[:,:] Qab = np.zeros((3,3))
+      double[:,:] delta  = np.eye(3,3)
+
+
+    # Qab = np.zeros((3,3))
+    # delta = np.eye(3,3)
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
@@ -227,14 +242,13 @@ def get_order(arr,nmax):
         for b in range(3):
             for i in range(nmax):
                 for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
-    return eigenvalues.max()
-  
+                    Qab[a,b] += (3*lab[a,i,j]*lab[b,i,j] - delta[a,b]) / factor
+    eigenvalues = np.linalg.eig(Qab)[0]
+    max_val = np.max(eigenvalues)
+    return max_val  
   
 #=======================================================================
-def MC_step(arr,Ts,nmax):
+def MC_step(double[:,:] arr, double Ts, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -255,8 +269,14 @@ def MC_step(arr,Ts,nmax):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    scale=0.1+Ts
-    accept = 0
+
+    cdef:
+      float scale=0.1+Ts
+      int accept = 0
+      long[:,:] xran
+      long[:,:] yran
+      double[:,:] aran
+
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
@@ -283,7 +303,7 @@ def MC_step(arr,Ts,nmax):
   
   
 #=======================================================================
-def main(program, int nsteps, int nmax, double temp, int pflag):
+def main(str program, int nsteps, int nmax, double temp, int pflag):
     """
     Arguments:
 	  program (string) = the name of the program;
