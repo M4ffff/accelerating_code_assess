@@ -263,8 +263,49 @@ def get_order(arr,nmax):
     return eigenvalues.max()
   
   # 
+
 #=======================================================================
-def MC_step(arr,Ts,nmax):
+def one_energy_vectorised2(arr, angled_array):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  ix (int) = x lattice coordinate of cell;
+	  iy (int) = y lattice coordinate of cell;
+      nmax (int) = side length of square lattice.
+    Description:
+      Function that computes the energy of a single cell of the
+      lattice taking into account periodic boundaries.  Working with
+      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
+      equation (1) in the project notes.
+	Returns:
+	  en (float) = reduced energy of cell.
+    """
+    en = np.zeros(arr.shape)
+    # ixp = (ix+1)%nmax # These are the coordinates
+    # ixm = (ix-1)%nmax # of the neighbours
+    # iyp = (iy+1)%nmax # with wraparound
+    # iym = (iy-1)%nmax #
+#
+# Add together the 4 neighbour contributions
+# to the energy
+#
+
+# HERE
+# PARALLELISE
+    ang1 = angled_array - np.roll(arr, -1, axis=1)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang1)**2) )
+    ang2 = angled_array - np.roll(arr, 1, axis=1)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang2)**2) )
+    ang3 = angled_array - np.roll(arr, -1, axis=0)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang3)**2) )
+    ang4 = angled_array - np.roll(arr, 1, axis=0)
+    en += ( 0.5*(1.0 - 3.0*np.cos(ang4)**2) )
+    return en
+  
+  
+  
+#=======================================================================
+def MC_step(arr,Ts,nmax ):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -286,32 +327,32 @@ def MC_step(arr,Ts,nmax):
     # of the distribution for the angle changes - increases
     # with temperature.
     scale=0.1+Ts
-    accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
     
+    
+    
+    # Calculate current energy of each cell
     en0 = one_energy_vectorised(arr)
     
-    for i in range(nmax):
-        for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0[ix, iy]:
-                accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0[ix, iy]) / Ts )
-
-                if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
-                else:
-                    arr[ix,iy] -= ang
-    return accept/(nmax*nmax)
+    # Change each cell by a random angle
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    angled_array = arr + aran
+    
+    # calculate new energy of each cell, using the old angles for the adjacent cells
+    en1 = one_energy_vectorised2(arr, angled_array)
+    
+    # calculate difference in energy
+    diff = en1 - en0
+    
+    rand_arr = np.random.uniform(0.0, 1.0, (diff.shape))
+    boltz = np.exp( -(diff) / Ts )
+    
+    # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
+    accepted = (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) )
+    arr[accepted] = angled_array[accepted] 
+    
+    num_accepted = np.sum(accepted)
+    
+    return num_accepted/(nmax*nmax)
   
   
 #=======================================================================
@@ -353,7 +394,7 @@ def main(program, nsteps, nmax, temp, pflag):
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
     
     
