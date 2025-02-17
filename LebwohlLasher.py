@@ -68,16 +68,22 @@ def plotdat(arr,pflag,nmax):
     # no plotting
     if pflag==0:
         return
+      
+    # x and y components of quivers
     u = np.cos(arr)
     v = np.sin(arr)
+    
+    # x and y positions of quivers
     x = np.arange(nmax)
     y = np.arange(nmax)
+    
+    # colours
     cols = np.zeros((nmax,nmax))
     
     if pflag==1: # colour the arrows according to energy
         mpl.rc('image', cmap='rainbow')
         
-        # HERE - CYTHONISE OR MORE EFFICIENT WAY OF CALCULATING MIN/MAX
+        # calc colour of each quiver
         for i in range(nmax):
             for j in range(nmax):
                 cols[i,j] = one_energy(arr,i,j,nmax)
@@ -94,10 +100,9 @@ def plotdat(arr,pflag,nmax):
         norm = plt.Normalize(vmin=0, vmax=1)
 
     quiveropts = dict(headlength=0,pivot='middle',headwidth=1,scale=1.1*nmax)
-    fig, ax = plt.subplots()
     
-    # WHY IS THIS SET EQUAL TO q?
-    q = ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
+    fig, ax = plt.subplots()
+    ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
     ax.set_aspect('equal')
     plt.show()
     
@@ -155,13 +160,17 @@ def one_energy(arr,ix,iy,nmax):
       reduced energy (U/epsilon), equivalent to setting epsilon=1 in
       equation (1) in the project notes.
 	Returns:
-	  en (float) = reduced energy of cell.
+	  energy (float) = reduced energy of cell.
     """
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
+    energy = 0.0
+    
+    # adjacent in x direction (right/left)
+    ixr = (ix+1)%nmax # These are the coordinates
+    ixl = (ix-1)%nmax # of the neighbours with wraparound
+    
+    # adjacent in y direction (up/down)
+    iyu = (iy+1)%nmax # 
+    iyd = (iy-1)%nmax #
 #
 # Add together the 4 neighbour contributions
 # to the energy
@@ -169,15 +178,16 @@ def one_energy(arr,ix,iy,nmax):
 
 # HERE
 # PARALLELISE
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    return en
+    # 
+    ang = arr[ix,iy]-arr[ixr,iy]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ixl,iy]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iyu]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iyd]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    return energy
   
   
 #=======================================================================
@@ -226,6 +236,7 @@ def get_order(arr,nmax):
                     Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
     Qab = Qab/(2*nmax*nmax)
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    print(f"eigenvalues.shape: {eigenvectors.shape}")
     return eigenvalues.max()
   
   
@@ -251,17 +262,33 @@ def MC_step(arr,Ts,nmax):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
+    # std
     scale=0.1+Ts
+    
+    # records number of accepted values
     accept = 0
+    
+    # print(arr)
+    # random positions in array
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    # angles
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    # print(aran)
+    
     for i in range(nmax):
         for j in range(nmax):
+            # pick random x coordinate
             ix = xran[i,j]
+            # pick random y coordinate
             iy = yran[i,j]
+            # pick random angle
             ang = aran[i,j]
+            
+            # old_energy
             en0 = one_energy(arr,ix,iy,nmax)
+            
+            # new energy
             arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
             if en1<=en0:
@@ -275,8 +302,24 @@ def MC_step(arr,Ts,nmax):
                     accept += 1
                 else:
                     arr[ix,iy] -= ang
+    
+    # print(arr)                
+    # print(f"accepted: {accept}")
     return accept/(nmax*nmax)
   
+  
+def plot_reduced_e(energy, nsteps):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, energy)
+  plt.show()
+  
+  
+def plot_order(order, nsteps):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, order)
+  plt.show()
   
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
@@ -311,13 +354,15 @@ def main(program, nsteps, nmax, temp, pflag):
         ratio[it] = MC_step(lattice,temp,nmax)
         energy[it] = all_energy(lattice,nmax)
         order[it] = get_order(lattice,nmax)
+    # plot_reduced_e(energy, nsteps)
+    # plot_order(order, nsteps)
     final = time.time()
     runtime = final-initial
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
     
     
