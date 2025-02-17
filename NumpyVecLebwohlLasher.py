@@ -78,9 +78,7 @@ def plotdat(arr,pflag,nmax):
         mpl.rc('image', cmap='rainbow')
         
         # HERE - CYTHONISE OR MORE EFFICIENT WAY OF CALCULATING MIN/MAX
-        for i in range(nmax):
-            for j in range(nmax):
-                cols[i,j] = one_energy(arr,i,j,nmax)
+        cols = one_energy_vectorised(arr)
         norm = plt.Normalize(cols.min(), cols.max())
         
     elif pflag==2: # colour the arrows according to angle
