@@ -162,13 +162,13 @@ def one_energy_vectorised(arr, angled_array=None):
         angled_array = arr
 
     ang1 = angled_array - np.roll(arr, -1, axis=1)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang1)**2) )
     ang2 = angled_array - np.roll(arr, 1, axis=1)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang2)**2) )
     ang3 = angled_array - np.roll(arr, -1, axis=0)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang3)**2) )
     ang4 = angled_array - np.roll(arr, 1, axis=0)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang4)**2) )
+    
+    angs = np.array([ang1, ang2, ang3, ang4])
+    ens = 0.5*(1.0 - 3.0*np.cos(angs)**2)
+    en = ens[0] + ens[1] + ens[2] + ens[3]
     return en
   
   
@@ -201,7 +201,8 @@ def get_order(arr,nmax, norm_val, delta):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    Qab = np.zeros((3,3))
+    # Qab = np.zeros((3,3))
+    Qab = np.zeros((2,2))
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
