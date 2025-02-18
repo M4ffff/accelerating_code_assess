@@ -142,12 +142,21 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     FileOut.close()
     
     
+ 
+#=======================================================================
 @nb.njit
-def calculate_energies(angles):
-    ens = 0.5*(1.0 - 3.0*np.cos(angles)**2)
-    en = ens[0] + ens[1] + ens[2] + ens[3]
+def calculate_energies_dummy(angles: float) -> float:
+    en = 0.5*(1.0 - 3.0*np.cos(angles)**2)
     return en
 
+
+#=======================================================================
+@nb.vectorize([nb.float64(nb.float64)], target='parallel')
+def calculate_energies(angle: float) -> float:
+    en = calculate_energies_dummy(angle)
+    return en
+  
+  
 #=======================================================================
 def one_energy_vectorised(arr, angled_array=None):
     """
@@ -175,12 +184,13 @@ def one_energy_vectorised(arr, angled_array=None):
     ang4 = angled_array - np.roll(arr, 1, axis=0)
     
     angs = np.array([ang1, ang2, ang3, ang4])
-    en = calculate_energies(angs)
-    
+    ens = calculate_energies(angs)
+    en = ens[0] + ens[1] + ens[2] + ens[3]
     return en
-  
-  
-  
+    
+
+
+
 #=======================================================================
 def all_energy(arr):
     """
@@ -196,6 +206,22 @@ def all_energy(arr):
     return np.sum(one_energy_vectorised(arr))
   
   
+@nb.njit
+def get_order_calc(lab, delta, norm_val):
+    Qab = np.zeros((2,2)) 
+    
+    lab_square = (3*lab**2)
+    lab_01_sum = np.sum(3*lab[0]*lab[1])
+    
+    Qab[0,0] = np.sum(lab_square[0]) - delta[0,0]
+    Qab[0,1] = Qab[1,0] = lab_01_sum 
+    Qab[1,1] = np.sum(lab_square[1]) - delta[1,1]
+    
+    Qab = Qab/(norm_val)
+    
+    return Qab
+
+  
 #=======================================================================
 def get_order(arr,nmax, norm_val, delta):
     """
@@ -210,7 +236,7 @@ def get_order(arr,nmax, norm_val, delta):
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
     # Qab = np.zeros((3,3))
-    Qab = np.zeros((2,2))
+    
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
@@ -218,24 +244,16 @@ def get_order(arr,nmax, norm_val, delta):
     # lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
     lab = np.vstack((np.cos(arr),np.sin(arr))).reshape(2,nmax,nmax)
     # print(lab)
-    
-    lab_square = (3*lab**2)
-    lab_01_sum = np.sum(3*lab[0]*lab[1])
-    
-    Qab[0,0] = np.sum(lab_square[0]) - delta[0,0]
-    Qab[0,1] = Qab[1,0] = lab_01_sum 
-    Qab[1,1] = np.sum(lab_square[1]) - delta[1,1]
-    
-    Qab = Qab/(norm_val)
-    
+    Qab = get_order_calc(lab, delta, norm_val)
+
     eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
   
-  
-  
-  
-#=======================================================================
-def MC_step(arr,Ts,scale,nmax ):
+
+
+# #=======================================================================
+# @nb.vectorize()
+# def MC_step_numba(arr,Ts,scale,nmax ):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -276,6 +294,84 @@ def MC_step(arr,Ts,scale,nmax ):
     
     # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
     accepted = (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) )
+    arr[accepted] = angled_array[accepted] 
+    
+    num_accepted = np.sum(accepted)
+    
+    return num_accepted/(nmax*nmax)
+
+
+#=======================================================================
+@nb.vectorize([nb.float64(nb.float64, nb.float64)]) 
+def calc_boltz(arr, Ts):
+  boltz = np.exp( -(arr) / Ts )
+  return boltz
+  
+  
+#=======================================================================
+@nb.njit
+def accept_torf(diff: float, boltz: float, rand_arr: float):
+    if (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) ):
+      return True
+    else:
+      return False
+    
+    
+#=======================================================================
+@nb.vectorize([nb.bool(nb.float64, nb.float64, nb.float64)])
+def calc_accepted(diff, boltz, rand_arr):
+    accept_bool = accept_torf(diff, boltz, rand_arr)
+    return accept_bool
+  
+  
+#=======================================================================
+def MC_step(arr,Ts,scale,nmax ):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  Ts (float) = reduced temperature (range 0 to 2);
+      nmax (int) = side length of square lattice.
+    Description:
+      Function to perform one MC step, which consists of an average
+      of 1 attempted change per lattice site.  Working with reduced
+      temperature Ts = kT/epsilon.  Function returns the acceptance
+      ratio for information.  This is the fraction of attempted changes
+      that are successful.  Generally aim to keep this around 0.5 for
+      efficient simulation.
+	Returns:
+	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
+    """
+    #
+    # Pre-compute some random numbers.  This is faster than
+    # using lots of individual calls.  "scale" sets the width
+    # of the distribution for the angle changes - increases
+    # with temperature.
+    
+
+    # Calculate current energy of each cell
+    # LONG
+    en0 = one_energy_vectorised(arr)
+    
+    # Change each cell by a random angle
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    angled_array = arr + aran
+    
+    # calculate new energy of each cell, using the old angles for the adjacent cells
+    # LONG
+    en1 = one_energy_vectorised(arr, angled_array)
+    
+    # calculate difference in energy
+    diff = en1 - en0
+    
+    rand_arr = np.random.uniform(0.0, 1.0, (diff.shape))
+    
+    # numbaed
+    boltz = calc_boltz(diff, Ts)
+    
+    
+    accepted = calc_accepted(diff, boltz, rand_arr)
+    # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
+    
     arr[accepted] = angled_array[accepted] 
     
     num_accepted = np.sum(accepted)
