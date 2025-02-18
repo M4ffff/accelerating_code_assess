@@ -139,46 +139,9 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     FileOut.close()
     
     
-#=======================================================================
-def one_energy(arr,ix,iy,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function that computes the energy of a single cell of the
-      lattice taking into account periodic boundaries.  Working with
-      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
-      equation (1) in the project notes.
-	Returns:
-	  en (float) = reduced energy of cell.
-    """
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
 
-# HERE
-# PARALLELISE
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    return en
-  
 #=======================================================================
-def one_energy_vectorised(arr):
+def one_energy_vectorised(arr, angled_array=None):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -194,24 +157,17 @@ def one_energy_vectorised(arr):
 	  en (float) = reduced energy of cell.
     """
     en = np.zeros(arr.shape)
-    # ixp = (ix+1)%nmax # These are the coordinates
-    # ixm = (ix-1)%nmax # of the neighbours
-    # iyp = (iy+1)%nmax # with wraparound
-    # iym = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
 
-# HERE
-# PARALLELISE
-    ang1 = arr - np.roll(arr, -1, axis=1)
+    if angled_array is None:
+        angled_array = arr
+
+    ang1 = angled_array - np.roll(arr, -1, axis=1)
     en += ( 0.5*(1.0 - 3.0*np.cos(ang1)**2) )
-    ang2 = arr - np.roll(arr, 1, axis=1)
+    ang2 = angled_array - np.roll(arr, 1, axis=1)
     en += ( 0.5*(1.0 - 3.0*np.cos(ang2)**2) )
-    ang3 = arr - np.roll(arr, -1, axis=0)
+    ang3 = angled_array - np.roll(arr, -1, axis=0)
     en += ( 0.5*(1.0 - 3.0*np.cos(ang3)**2) )
-    ang4 = arr - np.roll(arr, 1, axis=0)
+    ang4 = angled_array - np.roll(arr, 1, axis=0)
     en += ( 0.5*(1.0 - 3.0*np.cos(ang4)**2) )
     return en
   
@@ -229,13 +185,11 @@ def all_energy(arr):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    # enall = 0.0
-    # enall = np.sum(one_energy_vectorised(arr))
     return np.sum(one_energy_vectorised(arr))
   
   
 #=======================================================================
-def get_order(arr,nmax):
+def get_order(arr,nmax, norm_val, delta):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -248,64 +202,31 @@ def get_order(arr,nmax):
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
     Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
     #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-
-    for a in range(3):
-        for b in range(3):
-            Qab[a,b] = np.sum(3*lab[a]*lab[b]) - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    # lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    lab = np.vstack((np.cos(arr),np.sin(arr))).reshape(2,nmax,nmax)
+    # print(lab)
+    
+    lab_square = (3*lab**2)
+    lab_01_sum = np.sum(3*lab[0]*lab[1])
+    
+    Qab[0,0] = np.sum(lab_square[0]) - delta[0,0]
+    Qab[0,1] = Qab[1,0] = lab_01_sum 
+    Qab[1,1] = np.sum(lab_square[1]) - delta[1,1]
+    
+    Qab = Qab/(norm_val)
+    
+    eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
   
-  # 
-
-#=======================================================================
-def one_energy_vectorised2(arr, angled_array):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function that computes the energy of a single cell of the
-      lattice taking into account periodic boundaries.  Working with
-      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
-      equation (1) in the project notes.
-	Returns:
-	  en (float) = reduced energy of cell.
-    """
-    en = np.zeros(arr.shape)
-    # ixp = (ix+1)%nmax # These are the coordinates
-    # ixm = (ix-1)%nmax # of the neighbours
-    # iyp = (iy+1)%nmax # with wraparound
-    # iym = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
-
-# HERE
-# PARALLELISE
-    ang1 = angled_array - np.roll(arr, -1, axis=1)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang1)**2) )
-    ang2 = angled_array - np.roll(arr, 1, axis=1)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang2)**2) )
-    ang3 = angled_array - np.roll(arr, -1, axis=0)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang3)**2) )
-    ang4 = angled_array - np.roll(arr, 1, axis=0)
-    en += ( 0.5*(1.0 - 3.0*np.cos(ang4)**2) )
-    return en
   
   
   
 #=======================================================================
-def MC_step(arr,Ts,nmax ):
+def MC_step(arr,Ts,scale,nmax ):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -326,10 +247,8 @@ def MC_step(arr,Ts,nmax ):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    scale=0.1+Ts
     
-    
-    
+
     # Calculate current energy of each cell
     en0 = one_energy_vectorised(arr)
     
@@ -338,7 +257,7 @@ def MC_step(arr,Ts,nmax ):
     angled_array = arr + aran
     
     # calculate new energy of each cell, using the old angles for the adjacent cells
-    en1 = one_energy_vectorised2(arr, angled_array)
+    en1 = one_energy_vectorised(arr, angled_array)
     
     # calculate difference in energy
     diff = en1 - en0
@@ -380,14 +299,19 @@ def main(program, nsteps, nmax, temp, pflag):
     # Set initial values in arrays
     energy[0] = all_energy(lattice)
     ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
+    
+    # take calculation outside loop
+    norm_val = 2*nmax*nmax
+    delta = np.eye(3,3)
+    order[0] = get_order(lattice,nmax,norm_val,delta)
 
+    scale=0.1+temp
     # Begin doing and timing some MC steps.
     initial = time.time()
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
+        ratio[it] = MC_step(lattice,temp,scale,nmax)
         energy[it] = all_energy(lattice)
-        order[it] = get_order(lattice,nmax)
+        order[it] = get_order(lattice,nmax,norm_val, delta)
     final = time.time()
     runtime = final-initial
     
