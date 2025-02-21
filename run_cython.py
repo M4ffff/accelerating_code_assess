@@ -149,7 +149,7 @@ def get_order(arr,nmax):
     lab = np.zeros((2, nmax, nmax), dtype=np.float64)
     lab = get_lab(lab, arr, nmax)
     Qab = get_order_loop(Qab, nmax, lab, delta)
-    Qab = Qab/(2*nmax*nmax)
+    # Qab = Qab/(2*nmax*nmax)
     eigenvalues = np.linalg.eig(Qab)[0]
     # print(f"eigenvalues.shape: {eigenvectors.shape}")
     return eigenvalues.max()

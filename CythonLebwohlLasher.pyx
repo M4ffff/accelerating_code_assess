@@ -214,16 +214,23 @@ def all_energy_cythonised(double[:,:] arr, int nmax):
   
 #=======================================================================
 
-def get_order_loop(Qab, nmax, lab, delta):
+def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta):
+  cdef:
+    int a, b, i, j
+    int factor
+
+  factor = 2*nmax*nmax
   for a in range(2):
       for b in range(2):
           for i in range(nmax):
               for j in range(nmax):
-                  Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+                  Qab[a,b] += ( 3*lab[a,i,j]*lab[b,i,j] - delta[a,b] ) / factor
   return Qab
 
 
-def get_lab(lab, arr, nmax):
+def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax):
+    cdef: 
+      int i, j
     for i in range(nmax):
       for j in range(nmax):
         lab[0, i, j] = cos(arr[i,j])
