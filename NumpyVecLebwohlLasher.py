@@ -138,10 +138,22 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
     
+   
+   
+def calc_angles(arr):
+
+    ang1 = arr - np.roll(arr, -1, axis=1)
+    ang2 = arr - np.roll(arr, 1, axis=1)
+    ang3 = arr - np.roll(arr, -1, axis=0)
+    ang4 = arr - np.roll(arr, 1, axis=0)
+
+    angs = np.array([ang1, ang2, ang3, ang4])
+    
+    return angs
     
 
 #=======================================================================
-def one_energy_vectorised(arr, angled_array=None):
+def one_energy_vectorised(arr):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -156,17 +168,12 @@ def one_energy_vectorised(arr, angled_array=None):
 	Returns:
 	  en (float) = reduced energy of cell.
     """
-    en = np.zeros(arr.shape)
+    en = np.zeros(arr.shape, dtype=np.float64)
 
-    if angled_array is None:
-        angled_array = arr
-
-    ang1 = angled_array - np.roll(arr, -1, axis=1)
-    ang2 = angled_array - np.roll(arr, 1, axis=1)
-    ang3 = angled_array - np.roll(arr, -1, axis=0)
-    ang4 = angled_array - np.roll(arr, 1, axis=0)
+    # need to change to checkerboard
+    angs = calc_angles(arr)
     
-    angs = np.array([ang1, ang2, ang3, ang4])
+    # SLOW?
     ens = 0.5*(1.0 - 3.0*np.cos(angs)**2)
     en = ens[0] + ens[1] + ens[2] + ens[3]
     return en
@@ -189,7 +196,7 @@ def all_energy(arr):
   
   
 #=======================================================================
-def get_order(arr,nmax, norm_val, delta):
+def get_order(arr, nmax, norm_val, delta):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -201,8 +208,8 @@ def get_order(arr,nmax, norm_val, delta):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    # Qab = np.zeros((3,3))
-    Qab = np.zeros((2,2))
+    Qab = np.zeros((3,3), dtype=np.float64)
+    # Qab = np.zeros((2,2), dtype=np.float64)
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
@@ -210,24 +217,21 @@ def get_order(arr,nmax, norm_val, delta):
     # lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
     lab = np.vstack((np.cos(arr),np.sin(arr))).reshape(2,nmax,nmax)
     # print(lab)
-    
     lab_square = (3*lab**2)
     lab_01_sum = np.sum(3*lab[0]*lab[1])
     
-    Qab[0,0] = np.sum(lab_square[0]) - delta[0,0]
+    Qab[0,0] = np.sum(lab_square[0] - delta[0,0])
     Qab[0,1] = Qab[1,0] = lab_01_sum 
-    Qab[1,1] = np.sum(lab_square[1]) - delta[1,1]
+    Qab[1,1] = np.sum(lab_square[1] - delta[1,1])
+    Qab[2,2] = 0 - delta[2,2]
     
     Qab = Qab/(norm_val)
     
     eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
   
-  
-  
-  
 #=======================================================================
-def MC_step(arr,Ts,scale,nmax ):
+def MC_step(arr,Ts,scale,nmax, checkerboards ):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -253,24 +257,30 @@ def MC_step(arr,Ts,scale,nmax ):
     # Calculate current energy of each cell
     en0 = one_energy_vectorised(arr)
     
-    # Change each cell by a random angle
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    angled_array = arr + aran
     
-    # calculate new energy of each cell, using the old angles for the adjacent cells
-    en1 = one_energy_vectorised(arr, angled_array)
-    
-    # calculate difference in energy
-    diff = en1 - en0
-    
-    rand_arr = np.random.uniform(0.0, 1.0, (diff.shape))
-    boltz = np.exp( -(diff) / Ts )
-    
-    # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
-    accepted = (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) )
-    arr[accepted] = angled_array[accepted] 
-    
-    num_accepted = np.sum(accepted)
+    num_accepted = 0
+    for board in checkerboards:
+      
+      # Change each cell by a random angle
+      arr += aran*board
+      
+      # calculate new energy of each cell, using the old angles for the adjacent cells
+      en1 = one_energy_vectorised(arr)
+      
+      # calculate difference in energy
+      diff = en1 - en0
+      
+      rand_arr = np.random.uniform(0.0, 1.0, (diff.shape))
+      boltz = np.exp( -(diff) / Ts )
+      
+      # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
+      accepted = (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) )
+      # print(arr[accepted].shape)
+      arr[~accepted] -= aran[~accepted]*board[~accepted]
+      
+    num_accepted += np.sum(accepted)
+    # print(num_accepted)
     
     return num_accepted/(nmax*nmax)
   
@@ -305,12 +315,15 @@ def main(program, nsteps, nmax, temp, pflag):
     norm_val = 2*nmax*nmax
     delta = np.eye(3,3)
     order[0] = get_order(lattice,nmax,norm_val,delta)
-
+    
+    checkerboard1 = ( np.indices((nmax,nmax))[0] + np.indices((nmax,nmax))[1] ) % 2 
+    checkerboard2 = np.where((checkerboard1==0)|(checkerboard1==1), checkerboard1^1, checkerboard1)
+    checkerboards = [checkerboard1, checkerboard2]
     scale=0.1+temp
     # Begin doing and timing some MC steps.
     initial = time.time()
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,scale,nmax)
+        ratio[it] = MC_step(lattice,temp,scale,nmax, checkerboards)
         energy[it] = all_energy(lattice)
         order[it] = get_order(lattice,nmax,norm_val, delta)
     final = time.time()
@@ -319,7 +332,7 @@ def main(program, nsteps, nmax, temp, pflag):
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
     
     
