@@ -215,12 +215,21 @@ def all_energy_cythonised(double[:,:] arr, int nmax):
 #=======================================================================
 
 def get_order_loop(Qab, nmax, lab, delta):
-  for a in range(3):
-      for b in range(3):
+  for a in range(2):
+      for b in range(2):
           for i in range(nmax):
               for j in range(nmax):
                   Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
   return Qab
+
+
+def get_lab(lab, arr, nmax):
+    for i in range(nmax):
+      for j in range(nmax):
+        lab[0, i, j] = cos(arr[i,j])
+        lab[1, i, j] = sin(arr[i,j])
+    return lab
+
 
 def get_order(double[:,:] arr, int nmax):
     """

@@ -1,5 +1,5 @@
 import sys
-from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop
+from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop, get_lab
 
 import sys
 import time
@@ -140,13 +140,14 @@ def get_order(arr,nmax):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
+    Qab = np.zeros((2,2), dtype=np.float64)
+    delta = np.eye(2,2)
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
     #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    lab = np.zeros((2, nmax, nmax), dtype=np.float64)
+    lab = get_lab(lab, arr, nmax)
     Qab = get_order_loop(Qab, nmax, lab, delta)
     Qab = Qab/(2*nmax*nmax)
     eigenvalues = np.linalg.eig(Qab)[0]
