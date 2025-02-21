@@ -346,8 +346,6 @@ def MC_step(arr,Ts,nmax, comm):
     # print("1")
 
 
-    # print("Starting mpi script with %d worker tasks." % numworkers)
-
 # Distribute work to workers.  Must first figure out how many rows to
 # send and what to do with extra rows.
     averow = nmax // numworkers
@@ -518,12 +516,24 @@ def main(program, nsteps, nmax, temp, pflag):
             max_rows = rows+offset
         
             
-            start = min_rows
+            # start = min_rows
             # if min_rows % 2 == 0:
-            #     print("do even rows first")
+            #     # print("do even rows first")
+            #     # calculate first row -> send above
+                
             # else:
-            #     print("do odd rows first")
+            #     # print("do odd rows first")
             #     start += 1
+            #     # receive first row from below
+
+            # if max_rows % 2 == 1:
+            #     # calculate last row -> send below
+            #     # print("send below")
+            # else:
+            #     # print("receive from above")
+            #     # receive row from above
+                
+
 
         # Determine border elements.  Need to consider first and last columns.
         # Obviously, row 0 can't exchange with row 0-1.  Likewise, the last
@@ -545,13 +555,20 @@ def main(program, nsteps, nmax, temp, pflag):
         
             # print(f"above: {above}")
         
-            if above % 2 == 0:
-                # print("send first row above")
-                # send first row above
-                req=comm.Isend([lattice[offset], MPI.DOUBLE], dest=above, tag=RTAG)
+
                 
-                # print("receive first row from below")
-                comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
+                    
+                    
+                    
+            #######################################################################################
+        
+            if above % 2 == 0:
+                # # print("send first row above")
+                # # send first row above
+                # req=comm.Isend([lattice[offset], MPI.DOUBLE], dest=above, tag=RTAG)
+                
+                # # print("receive first row from below")
+                # comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
                 
                         #####
                 # send last row below
@@ -562,12 +579,12 @@ def main(program, nsteps, nmax, temp, pflag):
                 comm.Irecv([above_row_recieved, MPI.DOUBLE], source=below, tag=RTAG)
                 
             else:
-                # print("receive first row from below")
-                comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
+                # # print("receive first row from below")
+                # comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
                 
-                # print("send first row above")
-                # send first row above
-                req=comm.Isend([lattice[offset], MPI.DOUBLE], dest=above, tag=RTAG)
+                # # print("send first row above")
+                # # send first row above
+                # req=comm.Isend([lattice[offset], MPI.DOUBLE], dest=above, tag=RTAG)
                 
                 # print("receive last row from above")
                 comm.Irecv([above_row_recieved, MPI.DOUBLE], source=below, tag=RTAG)
@@ -588,7 +605,7 @@ def main(program, nsteps, nmax, temp, pflag):
         
         
             # print("entering rows iteration")
-            for row in range(start, max_rows):
+            for row in range(min_rows, max_rows):
                 above_row = np.zeros_like(lattice[row])
                 below_row = np.zeros_like(lattice[row])
                 if row == min_rows:
@@ -616,6 +633,25 @@ def main(program, nsteps, nmax, temp, pflag):
                 accept = update(lattice[row], above_row, below_row, aran_row, nmax, Ts)
 
                 # print("leaving update")
+                
+                
+                if row == min_rows:
+                    if above % 2 == 0:
+                        # print("send first row above")
+                        # send first row above
+                        req=comm.Isend([lattice[row], MPI.DOUBLE], dest=above, tag=RTAG)
+                        
+                        # print("receive first row from below")
+                        comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
+                          
+                    else:
+                        # print("receive first row from below")
+                        comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
+                        
+                        # print("send first row above")
+                        # send first row above
+                        req=comm.Isend([lattice[row], MPI.DOUBLE], dest=above, tag=RTAG)              
+                
                 
             
             # if min_rows % 2 == 0:
