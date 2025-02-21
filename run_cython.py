@@ -128,7 +128,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 
       
 #=======================================================================
-def get_order(arr,nmax):
+def get_order(arr,nmax, delta):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -141,7 +141,6 @@ def get_order(arr,nmax):
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
     Qab = np.zeros((2,2), dtype=np.float64)
-    delta = np.eye(2,2)
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
@@ -149,9 +148,7 @@ def get_order(arr,nmax):
     lab = np.zeros((2, nmax, nmax), dtype=np.float64)
     lab = get_lab(lab, arr, nmax)
     Qab = get_order_loop(Qab, nmax, lab, delta)
-    # Qab = Qab/(2*nmax*nmax)
     eigenvalues = np.linalg.eig(Qab)[0]
-    # print(f"eigenvalues.shape: {eigenvectors.shape}")
     return eigenvalues.max()
   
   
@@ -265,14 +262,16 @@ def main(program, nsteps, nmax, temp, pflag):
     # Set initial values in arrays
     energy[0] = all_energy_cythonised(lattice,nmax)
     ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
+    
+    delta = np.eye(2,2, dtype = np.float64)
+    order[0] = get_order(lattice,nmax, delta)
 
     # Begin doing and timing some MC steps.
     initial = time.time()
     for it in range(1,nsteps+1):
         ratio[it] = MC_step(lattice,temp,nmax)
         energy[it] = all_energy_cythonised(lattice,nmax)
-        order[it] = get_order(lattice,nmax)
+        order[it] = get_order(lattice,nmax, delta)
     # plot_reduced_e(energy, nsteps, temp)
     # plot_order(order, nsteps, temp)
     # plot_order_vs_temp(order, temp, nmax)
