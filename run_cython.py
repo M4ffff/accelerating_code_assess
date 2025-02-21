@@ -1,5 +1,5 @@
 import sys
-from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop, get_lab, calc_boltz
+from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop, get_lab, calc_boltz, MC_step_loop
 
 import sys
 import time
@@ -180,29 +180,7 @@ def MC_step(arr,Ts,nmax):
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
     boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     
-    for i in range(nmax):
-        for j in range(nmax):
-            # pick random angle
-            ang = aran[i,j]
-            
-            # old_energy
-            en0 = one_energy_cythonised(arr,i,j,nmax)
-            
-            # new energy
-            arr[i,j] += ang
-            en1 = one_energy_cythonised(arr,i,j,nmax)
-            diff = en1 - en0
-            if diff<=0:
-                accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = calc_boltz(diff, Ts)
-
-                if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
-                else:
-                    arr[i,j] -= ang
+    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran)
     
     # print(arr)                
     # print(f"accepted: {accept}")

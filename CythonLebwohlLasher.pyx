@@ -297,9 +297,46 @@ def get_order(double[:,:] arr, int nmax):
 
 
 
-def calc_boltz(diff, Ts):
+
+
+def calc_boltz(double diff, double Ts):
+  cdef:
+    double boltzval 
   boltzval = exp( -(diff) / Ts )
   return boltzval
+
+
+def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[:,:] randarr):
+      cdef: 
+        int accept = 0
+        int i, j
+        double diff
+
+      for i in range(nmax):
+        for j in range(nmax):
+            # pick random angle
+            ang = aran[i,j]
+            
+            # old_energy
+            en0 = one_energy_cythonised(arr,i,j,nmax)
+            
+            # new energy
+            arr[i,j] += ang
+            en1 = one_energy_cythonised(arr,i,j,nmax)
+            diff = en1 - en0
+            if diff<=0:
+                accept += 1
+            else:
+            # Now apply the Monte Carlo test - compare
+            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                boltz = calc_boltz(diff, Ts)
+
+                if boltz >= randarr[i,j]:
+                    accept += 1
+                else:
+                    arr[i,j] -= ang
+      return accept
+
 
 
 #=======================================================================
