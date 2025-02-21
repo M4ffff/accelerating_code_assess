@@ -1,5 +1,5 @@
 import sys
-from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop, get_lab
+from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop, get_lab, calc_boltz
 
 import sys
 import time
@@ -65,7 +65,7 @@ def plotdat(arr,pflag,nmax):
         # calc colour of each quiver
         for i in range(nmax):
             for j in range(nmax):
-                cols[i,j] = one_energy(arr,i,j,nmax)
+                cols[i,j] = one_energy_cythonised(arr,i,j,nmax)
         norm = plt.Normalize(cols.min(), cols.max())
         
     elif pflag==2: # colour the arrows according to angle
@@ -191,12 +191,13 @@ def MC_step(arr,Ts,nmax):
             # new energy
             arr[i,j] += ang
             en1 = one_energy_cythonised(arr,i,j,nmax)
-            if en1<=en0:
+            diff = en1 - en0
+            if diff<=0:
                 accept += 1
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+                boltz = calc_boltz(diff, Ts)
 
                 if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1

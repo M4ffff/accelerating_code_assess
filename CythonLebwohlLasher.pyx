@@ -29,7 +29,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from libc.math cimport sqrt, cos, sin
+from libc.math cimport sqrt, cos, sin, exp
 from cython.parallel cimport prange
 cimport openmp
 # cimport numpy as cnp
@@ -294,6 +294,14 @@ def get_order(double[:,:] arr, int nmax):
     max_val = np.max(eigenvalues)
     return max_val  
   
+
+
+
+def calc_boltz(diff, Ts):
+  boltzval = exp( -(diff) / Ts )
+  return boltzval
+
+
 #=======================================================================
 def MC_step(double[:,:] arr, double Ts, int nmax):
     """
