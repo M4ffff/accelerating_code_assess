@@ -1,5 +1,5 @@
 import sys
-from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised
+from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop
 
 import sys
 import time
@@ -124,26 +124,9 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
     
+    
+
       
-#=======================================================================
-def all_energy(arr,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to compute the energy of the entire lattice. Output
-      is in reduced units (U/epsilon).
-	Returns:
-	  enall (float) = reduced energy of lattice.
-    """
-    enall = 0.0
-    for i in range(nmax):
-        for j in range(nmax):
-            enall += one_energy_cythonised(arr,i,j,nmax)
-    return enall
-  
-  
 #=======================================================================
 def get_order(arr,nmax):
     """
@@ -164,13 +147,9 @@ def get_order(arr,nmax):
     # put it in a (3,i,j) array.
     #
     lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in range(3):
-        for b in range(3):
-            for i in range(nmax):
-                for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+    Qab = get_order_loop(Qab, nmax, lab, delta)
     Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    eigenvalues = np.linalg.eig(Qab)[0]
     # print(f"eigenvalues.shape: {eigenvectors.shape}")
     return eigenvalues.max()
   
@@ -200,24 +179,20 @@ def MC_step(arr,Ts,nmax):
     # std
     scale=0.1+Ts
     accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
+    
     for i in range(nmax):
         for j in range(nmax):
-            # pick random x coordinate
-            ix = xran[i,j]
-            # pick random y coordinate
-            iy = yran[i,j]
             # pick random angle
             ang = aran[i,j]
             
             # old_energy
-            en0 = one_energy_cythonised(arr,ix,iy,nmax)
+            en0 = one_energy_cythonised(arr,i,j,nmax)
             
             # new energy
-            arr[ix,iy] += ang
-            en1 = one_energy_cythonised(arr,ix,iy,nmax)
+            arr[i,j] += ang
+            en1 = one_energy_cythonised(arr,i,j,nmax)
             if en1<=en0:
                 accept += 1
             else:
@@ -228,7 +203,7 @@ def MC_step(arr,Ts,nmax):
                 if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1
                 else:
-                    arr[ix,iy] -= ang
+                    arr[i,j] -= ang
     
     # print(arr)                
     # print(f"accepted: {accept}")

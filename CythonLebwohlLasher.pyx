@@ -29,11 +29,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from libc.math cimport sqrt, cos
+from libc.math cimport sqrt, cos, sin
 from cython.parallel cimport prange
 cimport openmp
 # cimport numpy as cnp
 
+# dont cythonise
 #=======================================================================
 def initdat(int nmax):
     """ 
@@ -53,6 +54,7 @@ def initdat(int nmax):
     return arr
   
   
+# dont cythonise
 #=======================================================================
 def plotdat(arr,pflag,nmax):
     """
@@ -88,7 +90,7 @@ def plotdat(arr,pflag,nmax):
         # HERE - CYTHONISE OR MORE EFFICIENT WAY OF CALCULATING MIN/MAX
         for i in range(nmax):
             for j in range(nmax):
-                cols[i,j] = one_energy(arr,i,j,nmax)
+                cols[i,j] = one_energy_cythonised(arr,i,j,nmax)
         norm = plt.Normalize(cols.min(), cols.max())
         
     elif pflag==2: # colour the arrows according to angle
@@ -110,6 +112,8 @@ def plotdat(arr,pflag,nmax):
     plt.show()
 
 
+
+# dont cythonise
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
@@ -149,8 +153,10 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     FileOut.close()
     
     
+
+
 #=======================================================================
-def one_energy(double[:,:] arr, int ix, int iy, int nmax):
+def one_energy_cythonised(double[:,:] arr, int ix, int iy, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -185,7 +191,7 @@ def one_energy(double[:,:] arr, int ix, int iy, int nmax):
   
   
 #=======================================================================
-def all_energy(double[:,:] arr, int nmax):
+def all_energy_cythonised(double[:,:] arr, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -202,11 +208,20 @@ def all_energy(double[:,:] arr, int nmax):
       int j
     for i in range(nmax):
         for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
+            enall += one_energy_cythonised(arr,i,j,nmax)
     return enall
   
   
 #=======================================================================
+
+def get_order_loop(Qab, nmax, lab, delta):
+  for a in range(3):
+      for b in range(3):
+          for i in range(nmax):
+              for j in range(nmax):
+                  Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+  return Qab
+
 def get_order(double[:,:] arr, int nmax):
     """
     Arguments:
@@ -230,7 +245,7 @@ def get_order(double[:,:] arr, int nmax):
       int a 
       int b
       int i, j
-      # int ii, jj
+      #int ii, jj
 
     # Qab = np.zeros((3,3))
     # delta = np.eye(3,3)
@@ -239,13 +254,16 @@ def get_order(double[:,:] arr, int nmax):
     # put it in a (3,i,j) array.
     #
 
-    # for ii in range(nmax):
-    #     for jj in range(nmax):
-    #         cos_val = np.cos(arr[ii, jj])
-    #         sin_val = np.sin(arr[ii, jj])
-    #         lab[0, ii, jj] = cos_val
-    #         lab[1, ii, jj] = sin_val
-    #         lab[2, ii, jj] = 0.0  # No need for np.zeros_like, just set to zero
+
+    #lab = np.zeros((3,nmax,nmax), dtype=np.float64)
+
+    #for ii in prange(nmax, nogil=True, num_threads=4):
+    #    for jj in range(nmax):
+    #        cos_val = cos(arr[ii, jj])
+    #        sin_val = sin(arr[ii, jj])
+    #        lab[0, ii, jj] = cos_val
+    #        lab[1, ii, jj] = sin_val
+    #        lab[2, ii, jj] = 0.0  
 
 
 
@@ -305,9 +323,9 @@ def MC_step(double[:,:] arr, double Ts, int nmax):
             ix = xran[i,j]
             iy = yran[i,j]
             ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
+            en0 = one_energy_cythonised(arr,ix,iy,nmax)
             arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
+            en1 = one_energy_cythonised(arr,ix,iy,nmax)
             if en1<=en0:
                 accept += 1
             else:
@@ -352,7 +370,7 @@ def main(str program, int nsteps, int nmax, double temp, int pflag):
     # ratio = np.zeros(nsteps+1,dtype=np.float64)
     # order = np.zeros(nsteps+1,dtype=np.float64)
     # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
+    energy[0] = all_energy_cythonised(lattice,nmax)
     ratio[0] = 0.5 # ideal value
     order[0] = get_order(lattice,nmax)
 
@@ -360,7 +378,7 @@ def main(str program, int nsteps, int nmax, double temp, int pflag):
     initial = time.time()
     for it in range(1,nsteps+1):
         ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
+        energy[it] = all_energy_cythonised(lattice,nmax)
         order[it] = get_order(lattice,nmax)
     final = time.time()
     runtime = final-initial
