@@ -46,7 +46,38 @@ def initdat(nmax):
   
   
 #=======================================================================
-def plotdat(arr,pflag,nmax):
+def plot_reduced_e(energy, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, energy)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Reduced Energy")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order(order, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, order)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order_vs_temp(order, temp, nmax):
+  # needs error bars
+  fig, ax = plt.subplots()
+  ax.plot(temp, order)
+  ax.set_xlabel("Reduced Temperature, T*")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
+  plt.show()
+  
+  
+#=======================================================================
+def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None, nsteps=None):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -106,7 +137,12 @@ def plotdat(arr,pflag,nmax):
     ax.set_aspect('equal')
     plt.show()
     
-    
+    if final_data and pflag != 0:
+      plot_reduced_e(energy, nsteps, temp)
+      plot_order(order, nsteps, temp)
+      # plot_order_vs_temp(order, temp, nmax)  
+      
+      
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
@@ -234,9 +270,9 @@ def get_order(arr,nmax):
             for i in range(nmax):
                 for j in range(nmax):
                     Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
-    print(f"eigenvalues.shape: {eigenvectors.shape}")
+    Qab = Qab/(2*nmax*nmax) 
+    eigenvalues = np.linalg.eig(Qab)[0]
+    # print(f"eigenvalues.shape: {eigenvectors.shape}")
     return eigenvalues.max()
   
   
@@ -264,18 +300,10 @@ def MC_step(arr,Ts,nmax):
     # with temperature.
     # std
     scale=0.1+Ts
-    
-    # records number of accepted values
     accept = 0
-    
-    # print(arr)
-    # random positions in array
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    # angles
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    # print(aran)
-    
     for i in range(nmax):
         for j in range(nmax):
             # pick random x coordinate
@@ -307,19 +335,7 @@ def MC_step(arr,Ts,nmax):
     # print(f"accepted: {accept}")
     return accept/(nmax*nmax)
   
-  
-def plot_reduced_e(energy, nsteps):
-  fig, ax = plt.subplots()
-  steps = np.arange(0,nsteps+1)
-  ax.plot(steps, energy)
-  plt.show()
-  
-  
-def plot_order(order, nsteps):
-  fig, ax = plt.subplots()
-  steps = np.arange(0,nsteps+1)
-  ax.plot(steps, order)
-  plt.show()
+
   
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
@@ -354,17 +370,18 @@ def main(program, nsteps, nmax, temp, pflag):
         ratio[it] = MC_step(lattice,temp,nmax)
         energy[it] = all_energy(lattice,nmax)
         order[it] = get_order(lattice,nmax)
-    # plot_reduced_e(energy, nsteps)
-    # plot_order(order, nsteps)
+    
     final = time.time()
     runtime = final-initial
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
-    
+    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    plotdat(lattice,pflag,nmax, True, energy, temp, order, nsteps)
+    # plot_reduced_e(energy, nsteps, temp)
+    # plot_order(order, nsteps, temp)
+    # plot_order_vs_temp(order, temp, nmax)
     
 #=======================================================================
 # Main part of program, getting command line arguments and calling
