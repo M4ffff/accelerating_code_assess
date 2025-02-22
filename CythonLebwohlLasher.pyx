@@ -29,16 +29,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+
 from libc.math cimport sqrt, cos, sin, exp
 from cython.parallel cimport prange
 cimport openmp
 # cimport numpy as cnp
 from cython import boundscheck
+
+
   
 
 
 #=======================================================================
 def one_energy_cythonised(double[:,:] arr, int ix, int iy, int nmax):
+
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -69,11 +73,13 @@ def one_energy_cythonised(double[:,:] arr, int ix, int iy, int nmax):
     en += 0.5*(1.0 - 3.0*cos(ang)**2)
     ang = arr[ix,iy]-arr[ix,iyd]
     en += 0.5*(1.0 - 3.0*cos(ang)**2)
+
     return en
   
   
 #=======================================================================
 def all_energy_cythonised(double[:,:] arr, int nmax):
+
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -95,8 +101,12 @@ def all_energy_cythonised(double[:,:] arr, int nmax):
   
   
 #=======================================================================
+<<<<<<< HEAD
 
 def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int factor):#, int threads):
+=======
+def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int threads):
+>>>>>>> c56e6a9804f6d4683588f71f1205bcd71e596627
   cdef:
     int a, b, i, j
 
@@ -139,6 +149,7 @@ def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[
       for i in range(nmax):
         for j in range(nmax):
             # pick random angle
+
             ang = aran[i,j]
             
             # old_energy
@@ -190,6 +201,7 @@ def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale): #, t
       double[:,:] aran
       double[:,:] boltzran
 
+<<<<<<< HEAD
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
     boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     
@@ -207,3 +219,6 @@ def main_loop(double[:,:] lattice,double temp, int nmax, double scale):
     ratio = MC_step_cythonised(lattice,temp,nmax, scale) #, threads)
     energy = all_energy_cythonised(lattice,nmax)
     return ratio, energy
+=======
+
+>>>>>>> c56e6a9804f6d4683588f71f1205bcd71e596627

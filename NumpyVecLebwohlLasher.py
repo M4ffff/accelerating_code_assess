@@ -210,7 +210,53 @@ def one_energy_vectorised(arr):
     # SLOW?
     ens = 0.5*(1.0 - 3.0*np.cos(angs)**2)
     en = ens[0] + ens[1] + ens[2] + ens[3]
+
     return en
+    
+    
+  
+#=======================================================================
+def one_energy(arr,ix,iy,nmax):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  ix (int) = x lattice coordinate of cell;
+	  iy (int) = y lattice coordinate of cell;
+      nmax (int) = side length of square lattice.
+    Description:
+      Function that computes the energy of a single cell of the
+      lattice taking into account periodic boundaries.  Working with
+      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
+      equation (1) in the project notes.
+	Returns:
+	  energy (float) = reduced energy of cell.
+    """
+    energy = 0.0
+    
+    # adjacent in x direction (right/left)
+    ixr = (ix+1)%nmax # These are the coordinates of the neighbours (including wrapped around)
+    ixl = (ix-1)%nmax #  
+    
+    # adjacent in y direction (up/down)
+    iyu = (iy+1)%nmax # 
+    iyd = (iy-1)%nmax #
+#
+# Add together the 4 neighbour contributions
+# to the energy
+#
+
+# HERE
+# PARALLELISE
+    # 
+    ang = arr[ix,iy]-arr[ixr,iy]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ixl,iy]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iyu]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iyd]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    return energy
   
   
   
@@ -228,6 +274,7 @@ def all_energy(arr):
     """
     return np.sum(one_energy_vectorised(arr))
   
+
   
 #=======================================================================
 def get_order(arr, nmax, norm_val, delta):
@@ -316,6 +363,7 @@ def MC_step(arr,Ts,scale,nmax, checkerboards ):
     num_accepted += np.sum(accepted)
     # print(num_accepted)
     
+
     return num_accepted/(nmax*nmax)
   
   
@@ -343,6 +391,7 @@ def main(program, nsteps, nmax, temp, pflag):
     order = np.zeros(nsteps+1,dtype=np.float64)
     # Set initial values in arrays
     energy[0] = all_energy(lattice)
+
     ratio[0] = 0.5 # ideal value
     
     # take calculation outside loop
@@ -360,14 +409,15 @@ def main(program, nsteps, nmax, temp, pflag):
         ratio[it] = MC_step(lattice,temp,scale,nmax, checkerboards)
         energy[it] = all_energy(lattice)
         order[it] = get_order(lattice,nmax,norm_val, delta)
+
     final = time.time()
     runtime = final-initial
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax, True, energy, temp, order, nsteps)
+    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    plotdat(lattice,pflag,nmax)
     
     
 #=======================================================================
