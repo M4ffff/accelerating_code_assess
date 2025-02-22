@@ -1,5 +1,5 @@
 import sys
-from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop, get_lab, calc_boltz, MC_step_loop
+from CythonLebwohlLasher import one_energy_cythonised, all_energy_cythonised, get_order_loop, get_lab, calc_boltz, MC_step_loop, MC_step_cythonised, main_loop
 
 import sys
 import time
@@ -25,7 +25,38 @@ def initdat(nmax):
   
   
 #=======================================================================
-def plotdat(arr,pflag,nmax):
+def plot_reduced_e(energy, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, energy)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Reduced Energy")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order(order, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, order)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order_vs_temp(order, temp, nmax):
+  # needs error bars
+  fig, ax = plt.subplots()
+  ax.plot(temp, order)
+  ax.set_xlabel("Reduced Temperature, T*")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
+  plt.show()
+  
+  
+#=======================================================================
+def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None, nsteps=None):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -85,6 +116,10 @@ def plotdat(arr,pflag,nmax):
     ax.set_aspect('equal')
     plt.show()
     
+    if final_data and pflag != 0:
+      plot_reduced_e(energy, nsteps, temp)
+      plot_order(order, nsteps, temp)
+      # plot_order_vs_temp(order, temp, nmax)
     
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
@@ -128,7 +163,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 
       
 #=======================================================================
-def get_order(arr,nmax, delta, threads):
+def get_order(arr,nmax, delta, factor): #, threads):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -146,14 +181,14 @@ def get_order(arr,nmax, delta, threads):
     # put it in a (3,i,j) array.
     #
     lab = np.zeros((2, nmax, nmax), dtype=np.float64)
-    lab = get_lab(lab, arr, nmax, threads)
-    Qab = get_order_loop(Qab, nmax, lab, delta, threads)
+    lab = get_lab(lab, arr, nmax)#, threads)
+    Qab = get_order_loop(Qab, nmax, lab, delta, factor)#, threads)
     eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
   
   
 #=======================================================================
-def MC_step(arr,Ts,nmax, scale, threads):
+def MC_step(arr,Ts,nmax, scale): #, threads):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -180,44 +215,17 @@ def MC_step(arr,Ts,nmax, scale, threads):
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
     boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     
-    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran, threads)
+    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran)#, threads)
     
     # print(arr)                
     # print(f"accepted: {accept}")
     return accept/(nmax*nmax)
   
   
-def plot_reduced_e(energy, nsteps, temp):
-  fig, ax = plt.subplots()
-  steps = np.arange(0,nsteps+1)
-  ax.plot(steps, energy)
-  ax.set_xlabel("MCS")
-  ax.set_ylabel("Reduced Energy")
-  ax.set_title(f"Reduced Temperature, T* = {temp}")
-  plt.show()
-  
-  
-def plot_order(order, nsteps, temp):
-  fig, ax = plt.subplots()
-  steps = np.arange(0,nsteps+1)
-  ax.plot(steps, order)
-  ax.set_xlabel("MCS")
-  ax.set_ylabel("Order Parameter")
-  ax.set_title(f"Reduced Temperature, T* = {temp}")
-  plt.show()
-  
-  
-def plot_order_vs_temp(order, temp, nmax):
-  # needs error bars
-  fig, ax = plt.subplots()
-  ax.plot(temp, order)
-  ax.set_xlabel("Reduced Temperature, T*")
-  ax.set_ylabel("Order Parameter")
-  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
-  plt.show()
+
   
 #=======================================================================
-def main(program, nsteps, nmax, temp, pflag, threads):
+def main(program, nsteps, nmax, temp, pflag):#, threads):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -242,16 +250,18 @@ def main(program, nsteps, nmax, temp, pflag, threads):
     energy[0] = all_energy_cythonised(lattice,nmax)
     ratio[0] = 0.5 # ideal value
     
+    # only need to be calculated once (not in loop)
     delta = np.eye(2,2, dtype = np.float64)
     scale=0.1+temp
-    order[0] = get_order(lattice,nmax, delta, threads)
+    factor = 2*nmax*nmax
+    order[0] = get_order(lattice,nmax, delta, factor) #, threads)
 
     # Begin doing and timing some MC steps.
     initial = time.time()
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax, scale, threads)
-        energy[it] = all_energy_cythonised(lattice,nmax)
-        order[it] = get_order(lattice,nmax, delta, threads)
+        ratio[it], energy[it] = main_loop(lattice,temp,nmax, scale)
+        order[it] = get_order(lattice, nmax, delta, factor)
+        
     # plot_reduced_e(energy, nsteps, temp)
     # plot_order(order, nsteps, temp)
     # plot_order_vs_temp(order, temp, nmax)
@@ -262,7 +272,7 @@ def main(program, nsteps, nmax, temp, pflag, threads):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
     # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
+    plotdat(lattice,pflag,nmax, True, energy, temp, order, nsteps)
     
     
 #=======================================================================
@@ -270,16 +280,17 @@ def main(program, nsteps, nmax, temp, pflag, threads):
 # main simulation function.
 #
 if __name__ == '__main__':
-    if int(len(sys.argv)) == 6:
+    if int(len(sys.argv)) == 5:             ######### 6
         PROGNAME = sys.argv[0]
         ITERATIONS = int(sys.argv[1])
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        THREADS = int(sys.argv[5])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, THREADS)
+        #THREADS = int(sys.argv[5])
+        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)#, THREADS)
     else:
-        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
+        # print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
+        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
 #=======================================================================
 
 
