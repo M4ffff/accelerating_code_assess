@@ -181,7 +181,7 @@ def sum_ens(ens0,ens1,ens2,ens3):
     en = calc_sum(ens0,ens1,ens2,ens3)
     return en
 
-  
+ 
 #=======================================================================
 def one_energy_vectorised(arr):
     """
@@ -269,57 +269,6 @@ def get_order(arr,nmax, norm_val, delta):
     return eigenvalues.max()
   
 
-
-# #=======================================================================
-# @nb.vectorize()
-# def MC_step_numba(arr,Ts,scale,nmax ):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  Ts (float) = reduced temperature (range 0 to 2);
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to perform one MC step, which consists of an average
-      of 1 attempted change per lattice site.  Working with reduced
-      temperature Ts = kT/epsilon.  Function returns the acceptance
-      ratio for information.  This is the fraction of attempted changes
-      that are successful.  Generally aim to keep this around 0.5 for
-      efficient simulation.
-	Returns:
-	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
-    """
-    #
-    # Pre-compute some random numbers.  This is faster than
-    # using lots of individual calls.  "scale" sets the width
-    # of the distribution for the angle changes - increases
-    # with temperature.
-    
-
-    # Calculate current energy of each cell
-    en0 = one_energy_vectorised(arr)
-    
-    # Change each cell by a random angle
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    angled_array = arr + aran
-    
-    # calculate new energy of each cell, using the old angles for the adjacent cells
-    en1 = one_energy_vectorised(arr, angled_array)
-    
-    # calculate difference in energy
-    diff = en1 - en0
-    
-    rand_arr = np.random.uniform(0.0, 1.0, (diff.shape))
-    boltz = np.exp( -(diff) / Ts )
-    
-    # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
-    accepted = (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) )
-    arr[accepted] = angled_array[accepted] 
-    
-    num_accepted = np.sum(accepted)
-    
-    return num_accepted/(nmax*nmax)
-
-
 #=======================================================================
 @nb.vectorize([nb.float64(nb.float64, nb.float64)]) 
 def calc_boltz(arr, Ts):
@@ -403,8 +352,7 @@ def MC_step(arr,Ts,scale,nmax, checkerboards ):
       
       # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
       accepted = (calc_accepted(diff, boltz, rand_arr))
-      # print(accepted)
-      # print(arr[accepted].shape)
+      
       arr -= aran*board*accepted
     
     

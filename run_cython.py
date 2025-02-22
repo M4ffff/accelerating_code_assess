@@ -128,7 +128,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 
       
 #=======================================================================
-def get_order(arr,nmax, delta):
+def get_order(arr,nmax, delta, threads):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -146,14 +146,14 @@ def get_order(arr,nmax, delta):
     # put it in a (3,i,j) array.
     #
     lab = np.zeros((2, nmax, nmax), dtype=np.float64)
-    lab = get_lab(lab, arr, nmax)
-    Qab = get_order_loop(Qab, nmax, lab, delta)
+    lab = get_lab(lab, arr, nmax, threads)
+    Qab = get_order_loop(Qab, nmax, lab, delta, threads)
     eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
   
   
 #=======================================================================
-def MC_step(arr,Ts,nmax):
+def MC_step(arr,Ts,nmax, scale, threads):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -175,12 +175,12 @@ def MC_step(arr,Ts,nmax):
     # of the distribution for the angle changes - increases
     # with temperature.
     # std
-    scale=0.1+Ts
+    
     accept = 0
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
     boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     
-    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran)
+    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran, threads)
     
     # print(arr)                
     # print(f"accepted: {accept}")
@@ -217,7 +217,7 @@ def plot_order_vs_temp(order, temp, nmax):
   plt.show()
   
 #=======================================================================
-def main(program, nsteps, nmax, temp, pflag):
+def main(program, nsteps, nmax, temp, pflag, threads):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -243,14 +243,15 @@ def main(program, nsteps, nmax, temp, pflag):
     ratio[0] = 0.5 # ideal value
     
     delta = np.eye(2,2, dtype = np.float64)
-    order[0] = get_order(lattice,nmax, delta)
+    scale=0.1+temp
+    order[0] = get_order(lattice,nmax, delta, threads)
 
     # Begin doing and timing some MC steps.
     initial = time.time()
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
+        ratio[it] = MC_step(lattice,temp,nmax, scale, threads)
         energy[it] = all_energy_cythonised(lattice,nmax)
-        order[it] = get_order(lattice,nmax, delta)
+        order[it] = get_order(lattice,nmax, delta, threads)
     # plot_reduced_e(energy, nsteps, temp)
     # plot_order(order, nsteps, temp)
     # plot_order_vs_temp(order, temp, nmax)
@@ -269,15 +270,16 @@ def main(program, nsteps, nmax, temp, pflag):
 # main simulation function.
 #
 if __name__ == '__main__':
-    if int(len(sys.argv)) == 5:
+    if int(len(sys.argv)) == 6:
         PROGNAME = sys.argv[0]
         ITERATIONS = int(sys.argv[1])
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
+        THREADS = int(sys.argv[5])
+        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, THREADS)
     else:
-        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
+        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
 #=======================================================================
 
 
