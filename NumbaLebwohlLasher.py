@@ -307,7 +307,7 @@ def get_order(arr,nmax, norm_val, delta):
   
 
 #=======================================================================
-@nb.vectorize([nb.float64(nb.float64, nb.float64)]) 
+@nb.vectorize([nb.float64(nb.float64, nb.float64)], target='parallel') 
 def calc_boltz(arr, Ts):
   boltz = np.exp( -(arr) / Ts )
   return boltz
@@ -322,12 +322,13 @@ def accept_torf(diff: float, boltz: float, rand_arr: float):
       return 1
     
     
-@nb.vectorize([nb.int64(nb.float64, nb.float64, nb.float64)])
+@nb.vectorize([nb.int64(nb.float64, nb.float64, nb.float64)], target='parallel')
 def calc_accepted(diff, boltz, rand_arr):
     accept_bool = accept_torf(diff, boltz, rand_arr)
     return accept_bool
   
 
+### currently not used
 @nb.njit
 def calc_new_angle(ang1:float, ang2: float):
   return ang1 + ang2
@@ -337,7 +338,7 @@ def calc_angled_array(arr, angles, res):
     for i in range(arr.shape[0]):
         for j in range(arr.shape[0]):
             res[i,j] = calc_new_angle(arr[i,j] , angles[i,j])
-  
+###
   
 #=======================================================================
 def MC_step(arr,Ts,scale,nmax, checkerboards ):

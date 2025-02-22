@@ -40,6 +40,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 
+from mpi4pyCythonLebwohlLasher import one_energy_mpi_cythonised, update_cythonised
+
+
 
 
 #=======================================================================
@@ -313,13 +316,13 @@ def get_order(arr,nmax):
     return eigenvalues.max()
   
   
-def update(current_row, above_row, below_row, aran, nmax, Ts):
+def update(current_row, above_row, below_row, aran, rand_row, nmax, Ts):
     accept = 0
     for iy in range(nmax):
         ang = aran[iy]
-        en0 = one_energy_mpi(current_row, above_row, below_row,iy,nmax)
+        en0 = one_energy_mpi_cythonised(current_row, above_row, below_row,iy,nmax)
         current_row[iy] += ang
-        en1 = one_energy_mpi(current_row, above_row, below_row,iy,nmax)
+        en1 = one_energy_mpi_cythonised(current_row, above_row, below_row,iy,nmax)
         if en1<=en0:
             accept += 1
         else:
@@ -327,7 +330,7 @@ def update(current_row, above_row, below_row, aran, nmax, Ts):
         # exp( -(E_new - E_old) / T* ) >= rand(0,1)
             boltz = np.exp( -(en1 - en0) / Ts )
 
-            if boltz >= np.random.uniform(0.0,1.0):
+            if boltz >= rand_row[iy]:
                 accept += 1
             else:
                 current_row[iy] -= ang
@@ -557,6 +560,7 @@ def main(program, nsteps, nmax, temp, pflag):
             for row in range(min_rows, max_rows):
                 above_row = np.zeros_like(lattice[row])
                 below_row = np.zeros_like(lattice[row])
+                rand_row = np.random.uniform(0,1,(nmax))
                 
                 if row == min_rows:
                     # use received row from above neighbour
@@ -574,7 +578,7 @@ def main(program, nsteps, nmax, temp, pflag):
                 aran_row = aran_rows[row-offset]
                         
                 # update the values in lattice
-                accept = update(lattice[row], above_row, below_row, aran_row, nmax, Ts)
+                accept = update_cythonised(lattice[row], above_row, below_row, aran_row, rand_row, nmax, Ts)
 
                 # if first row, send new values above (for when bottom row of above worker's section is being calculated )
                 # updates "below_row_received"

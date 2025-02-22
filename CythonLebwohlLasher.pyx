@@ -34,14 +34,17 @@ from libc.math cimport sqrt, cos, sin, exp
 from cython.parallel cimport prange
 cimport openmp
 # cimport numpy as cnp
-from cython import boundscheck
+from cython import boundscheck, wraparound, cdivision
 
 
   
 
 
 #=======================================================================
-def one_energy_cythonised(double[:,:] arr, int ix, int iy, int nmax):
+@boundscheck(False)
+@wraparound(False)
+@cdivision(True)
+cdef double one_energy_cythonised(double[:,:] arr, int ix, int iy, int nmax) nogil:
 
     """
     Arguments:
@@ -78,6 +81,9 @@ def one_energy_cythonised(double[:,:] arr, int ix, int iy, int nmax):
   
   
 #=======================================================================
+@boundscheck(False)
+@wraparound(False)
+@cdivision(True)
 def all_energy_cythonised(double[:,:] arr, int nmax):
 
     """
@@ -101,12 +107,11 @@ def all_energy_cythonised(double[:,:] arr, int nmax):
   
   
 #=======================================================================
-<<<<<<< HEAD
-
+@boundscheck(False)
+@wraparound(False)
+@cdivision(True)
 def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int factor):#, int threads):
-=======
-def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int threads):
->>>>>>> c56e6a9804f6d4683588f71f1205bcd71e596627
+
   cdef:
     int a, b, i, j
 
@@ -121,6 +126,8 @@ def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] del
 
 
 @boundscheck(False)
+@wraparound(False)
+@cdivision(True)
 def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax): #, int threads):
     cdef: 
       int i, j
@@ -132,13 +139,15 @@ def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax): #, int threads):
     return lab
 
 
-def calc_boltz(double diff, double Ts):
+cdef double calc_boltz(double diff, double Ts) nogil:
   cdef:
     double boltzval 
   boltzval = exp( -(diff) / Ts )
   return boltzval
 
-
+@boundscheck(False)
+@wraparound(False)
+@cdivision(True)
 def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[:,:] randarr): #, int threads):
       cdef: 
         int accept = 0
@@ -174,6 +183,9 @@ def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[
 
 
 #=======================================================================
+@boundscheck(False)
+@wraparound(False)
+@cdivision(True)
 def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale): #, threads):
     """
     Arguments:
@@ -201,7 +213,6 @@ def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale): #, t
       double[:,:] aran
       double[:,:] boltzran
 
-<<<<<<< HEAD
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
     boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     
@@ -211,7 +222,9 @@ def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale): #, t
     # print(f"accepted: {accept}")
     return accept/(nmax*nmax)
 
-
+@boundscheck(False)
+@wraparound(False)
+@cdivision(True)
 def main_loop(double[:,:] lattice,double temp, int nmax, double scale):
     cdef:
       double ratio
@@ -219,6 +232,4 @@ def main_loop(double[:,:] lattice,double temp, int nmax, double scale):
     ratio = MC_step_cythonised(lattice,temp,nmax, scale) #, threads)
     energy = all_energy_cythonised(lattice,nmax)
     return ratio, energy
-=======
 
->>>>>>> c56e6a9804f6d4683588f71f1205bcd71e596627
