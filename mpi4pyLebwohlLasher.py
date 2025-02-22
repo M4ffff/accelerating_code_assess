@@ -29,6 +29,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+
+import os
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
+from mpi4py import MPI
+import numpy as np
+import matplotlib.pyplot as plt
+import sys
+
+
+
 #=======================================================================
 def initdat(nmax):
     """ 
@@ -181,6 +194,43 @@ def one_energy(arr,ix,iy,nmax):
   
   
 #=======================================================================
+def one_energy_mpi(current_row, above_row, below_row,ix,nmax):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  ix (int) = x lattice coordinate of cell;
+	  iy (int) = y lattice coordinate of cell;
+      nmax (int) = side length of square lattice.
+    Description:
+      Function that computes the energy of a single cell of the
+      lattice taking into account periodic boundaries.  Working with
+      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
+      equation (1) in the project notes.
+	Returns:
+	  en (float) = reduced energy of cell.
+    """
+    en = 0.0
+#
+# Add together the 4 neighbour contributions
+# to the energy
+#
+
+# HERE
+# PARALLELISE
+    ang = current_row[ix]-current_row[(ix+1)%nmax]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = current_row[ix]-current_row[(ix-1)%nmax]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = current_row[ix]-above_row[ix]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = current_row[ix]-below_row[ix]
+    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    return en
+  
+  
+  
+  
+#=======================================================================
 def all_energy(arr,nmax):
     """
     Arguments:
@@ -225,12 +275,35 @@ def get_order(arr,nmax):
                 for j in range(nmax):
                     Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
     Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
   
   
+def update(current_row, above_row, below_row, aran, nmax, Ts):
+    accept = 0
+    for iy in range(nmax):
+        ang = aran[iy]
+        en0 = one_energy_mpi(current_row, above_row, below_row,iy,nmax)
+        current_row[iy] += ang
+        en1 = one_energy_mpi(current_row, above_row, below_row,iy,nmax)
+        if en1<=en0:
+            accept += 1
+        else:
+        # Now apply the Monte Carlo test - compare
+        # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+            boltz = np.exp( -(en1 - en0) / Ts )
+
+            if boltz >= np.random.uniform(0.0,1.0):
+                accept += 1
+            else:
+                current_row[iy] -= ang
+                
+    return accept
+  
+  
+  
 #=======================================================================
-def MC_step(arr,Ts,nmax):
+def MC_step(arr,Ts,nmax, comm):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -253,29 +326,83 @@ def MC_step(arr,Ts,nmax):
     # with temperature.
     scale=0.1+Ts
     accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    for i in range(nmax):
-        for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+    # print("0")
+  
+    MAXWORKER  = 17          # maximum number of worker tasks
+    MINWORKER  = 1          # minimum number of worker tasks
+    BEGIN      = 1          # message tag
+    LTAG       = 2          # message tag
+    RTAG       = 3          # message tag
+    NONE       = 0          # indicates no neighbour
+    DONE       = 4          # message tag
+    MASTER     = 0          # taskid of first process
 
-                if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
-                else:
-                    arr[ix,iy] -= ang
+        # u = np.zeros((2,NXPROB,NYPROB))        # array for grid
+
+# First, find out my taskid and how many tasks are running
+    numtasks = comm.Get_size()
+    numworkers = numtasks-1
+    # print("1")
+
+
+# Distribute work to workers.  Must first figure out how many rows to
+# send and what to do with extra rows.
+    averow = nmax // numworkers
+    extra = nmax % numworkers
+    offset = 0
+    for i in range(1,numworkers+1):
+        rows = averow
+        if i <= extra:
+            rows+=1
+
+    # Tell each worker who its neighbors are, since they must exchange
+    # data with each other.
+        above = (i - 1) % numworkers
+        below = (i + 1) % numworkers
+
+    # Now send startup information to each worker 
+        # print("sending")
+        comm.send(offset, dest=i, tag=BEGIN)
+        comm.send(rows, dest=i, tag=BEGIN)
+        comm.send(above, dest=i, tag=BEGIN)
+        comm.send(below, dest=i, tag=BEGIN)
+        comm.Send([arr[offset:offset+rows], MPI.DOUBLE], dest=i, tag=BEGIN)
+        comm.Send([aran[offset:offset+rows], MPI.DOUBLE], dest=i, tag=BEGIN)
+        # print("sending 2")
+        offset += rows
+        
+        
+    # print("all workers sent")
+# Now wait for results from all worker tasks 
+# NEED TO DO
+    for i in range(1,numworkers+1):
+        offset = comm.recv(source=i, tag=DONE)
+        rows = comm.recv(source=i, tag=DONE)
+        local_accept = comm.recv(source=i, tag=DONE)
+        comm.Recv([arr[offset:offset+rows], MPI.DOUBLE], source=i, tag=DONE)
+        accept += int(local_accept)
+
+    # print(f"accept: {accept}")
     return accept/(nmax*nmax)
+    # End of master code
+    
+
+    
+    
+      
+      
+      
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   
   
 #=======================================================================
@@ -292,33 +419,175 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
-    # Create and initialise lattice
-    lattice = initdat(nmax)
-    # Plot initial frame of lattice
-    plotdat(lattice,pflag,nmax)
-    # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1,dtype=np.float64)
-    ratio = np.zeros(nsteps+1,dtype=np.float64)
-    order = np.zeros(nsteps+1,dtype=np.float64)
-    # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
-    ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
-
-    # Begin doing and timing some MC steps.
-    initial = time.time()
-    for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
-        order[it] = get_order(lattice,nmax)
-    final = time.time()
-    runtime = final-initial
     
-    # Final outputs
-    print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-    # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
+    MAXWORKER  = 17          # maximum number of worker tasks
+    MINWORKER  = 1          # minimum number of worker tasks
+    BEGIN      = 1          # message tag
+    LTAG       = 2          # message tag
+    RTAG       = 3          # message tag
+    NONE       = 0          # indicates no neighbour
+    DONE       = 4          # message tag
+    MASTER     = 0          # taskid of first process
+    
+    comm = MPI.COMM_WORLD
+    taskid = comm.Get_rank()
+    numtasks = comm.Get_size()
+    numworkers = numtasks-1
+    
+    #************************* master code *******************************/
+    if taskid == MASTER:
+            # Check if numworkers is within range - quit if not
+        if (numworkers > MAXWORKER) or (numworkers < MINWORKER):
+            print("ERROR: the number of tasks must be between %d and %d." % (MINWORKER+1,MAXWORKER+1))
+            print("Quitting...")
+            comm.Abort()
+            
+        print("running main")
+        # Create and initialise lattice
+        lattice = initdat(nmax)
+        for i in range(1, numworkers+1):
+            comm.Send([lattice, MPI.DOUBLE], dest=i, tag=BEGIN)
+            comm.send(temp, dest=i, tag=BEGIN)
+            comm.send(nsteps, dest=i, tag=BEGIN)
+        
+        print("lattice and temp sent")
+        
+        # Plot initial frame of lattice
+        plotdat(lattice,pflag,nmax)
+        # Create arrays to store energy, acceptance ratio and order parameter
+        energy = np.zeros(nsteps+1,dtype=np.float64)
+        ratio = np.zeros(nsteps+1,dtype=np.float64)
+        order = np.zeros(nsteps+1,dtype=np.float64)
+        # Set initial values in arrays
+        energy[0] = all_energy(lattice,nmax)
+        ratio[0] = 0.5 # ideal value
+        order[0] = get_order(lattice,nmax)
+
+        # Begin doing and timing some MC steps.
+        initial = MPI.Wtime()
+        for it in range(1,nsteps+1):
+            ####################################################################################################################
+            ratio[it] = MC_step(lattice,temp,nmax, comm)
+            ####################################################################################################################
+            energy[it] = all_energy(lattice,nmax)
+            order[it] = get_order(lattice,nmax)
+        final = MPI.Wtime()
+        runtime = final-initial
+        
+        # Final outputs
+        print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
+        # Plot final frame of lattice and generate output file
+        # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+        plotdat(lattice,pflag,nmax)
+    
+    
+    
+    #************************* workers code **********************************/
+    elif taskid != MASTER:
+      
+        lattice = np.zeros((nmax, nmax))
+        comm.Recv([lattice, MPI.DOUBLE], source=MASTER, tag=BEGIN)
+      
+        Ts = comm.recv(source=MASTER, tag=BEGIN)
+        nsteps = comm.recv(source=MASTER, tag=BEGIN)
+      
+        
+    # Array is already initialized to zero - including the borders
+    # Receive offset, rows, neighbors and grid section from master
+        for i in range(nsteps):
+            offset = comm.recv(source=MASTER, tag=BEGIN)
+            rows = comm.recv(source=MASTER, tag=BEGIN)
+            above = comm.recv(source=MASTER, tag=BEGIN)
+            below = comm.recv(source=MASTER, tag=BEGIN)
+            comm.Recv([lattice[offset:offset+rows], MPI.DOUBLE], source=MASTER, tag=BEGIN)
+            
+            aran_rows = np.zeros_like(lattice[offset:offset+rows])
+            comm.Recv([aran_rows, MPI.DOUBLE], source=MASTER, tag=BEGIN)
+
+            
+            min_rows = offset
+            max_rows = rows+offset
+
+
+        # Begin doing STEPS iterations.  Must communicate border rows with
+        # neighbours.  If I have the first or last grid row, then I only need
+        # to  communicate with one neighbour
+        
+            above_row_recieved = np.zeros_like(lattice[0])
+            below_row_recieved = np.zeros_like(lattice[0])
+ 
+                    
+            #######################################################################################
+                   
+            if above % 2 == 0:
+                # send last row below
+                # print("send last row below")
+                req=comm.Isend([lattice[offset+rows-1], MPI.DOUBLE], dest=below, tag=LTAG)
+            
+                # print("receive last row from above")
+                comm.Irecv([above_row_recieved, MPI.DOUBLE], source=above, tag=RTAG)
+                
+            else:                
+                # print("receive last row from above")
+                comm.Irecv([above_row_recieved, MPI.DOUBLE], source=above, tag=RTAG)
+                
+                # send last row below
+                # print("send last row below")
+                req=comm.Isend([lattice[offset+rows-1], MPI.DOUBLE], dest=below, tag=LTAG)
+            
+            # print("entering rows iteration")
+            for row in range(min_rows, max_rows):
+                above_row = np.zeros_like(lattice[row])
+                below_row = np.zeros_like(lattice[row])
+                
+                if row == min_rows:
+                    # use received row from above neighbour
+                    above_row = above_row_recieved
+                else:
+                    above_row = lattice[row-1]
+                    
+                if row == max_rows - 1:
+                    # use received row from below neighbour
+                    # this will be an updated version
+                    below_row = below_row_recieved
+                else:
+                    below_row = lattice[row+1]
+                    
+                aran_row = aran_rows[row-offset]
+                        
+                # update the values in lattice
+                accept = update(lattice[row], above_row, below_row, aran_row, nmax, Ts)
+
+                # if first row, send new values above (for when bottom row of above worker's section is being calculated )
+                # updates "below_row_received"
+                if row == min_rows:
+                    # align send/receives
+                    if above % 2 == 0:
+                        # send first row above
+                        req=comm.Isend([lattice[row], MPI.DOUBLE], dest=above, tag=RTAG)
+                        
+                        # receive first row from below
+                        comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
+                          
+                    else:
+                        # receive first row from below
+                        comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
+                        
+                        # send first row above
+                        req=comm.Isend([lattice[row], MPI.DOUBLE], dest=above, tag=RTAG)              
+
+
+        # Finally, send my portion of final results back to master
+            comm.send(offset, dest=MASTER, tag=DONE)
+            comm.send(rows, dest=MASTER, tag=DONE)
+            comm.send(accept, dest=MASTER, tag=DONE)
+            comm.Send([lattice[offset:offset+rows], MPI.DOUBLE], dest=MASTER, tag=DONE)
+        
+        
+
+    
+    
+    
     
     
 #=======================================================================
@@ -335,4 +604,4 @@ if __name__ == '__main__':
         main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
     else:
         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
-#=======================================================================
+#======================================================================= 

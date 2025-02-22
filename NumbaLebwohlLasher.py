@@ -29,7 +29,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from numba import jit
+import numba as nb
+
 
 #=======================================================================
 def initdat(nmax):
@@ -80,9 +81,7 @@ def plotdat(arr,pflag,nmax):
         mpl.rc('image', cmap='rainbow')
         
         # HERE - CYTHONISE OR MORE EFFICIENT WAY OF CALCULATING MIN/MAX
-        for i in range(nmax):
-            for j in range(nmax):
-                cols[i,j] = one_energy(arr,i,j,nmax)
+        cols = one_energy_vectorised(arr)
         norm = plt.Normalize(cols.min(), cols.max())
         
     elif pflag==2: # colour the arrows according to angle
@@ -143,9 +142,48 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     FileOut.close()
     
     
+ 
 #=======================================================================
-@jit(nopython=True)
-def one_energy(arr,ix,iy,nmax):
+@nb.njit
+def calculate_energies_dummy(angle: float) -> float:
+    en = 0.5*(1.0 - 3.0*np.cos(angle)**2)
+    return en
+
+
+@nb.vectorize([nb.float64(nb.float64)], target='parallel')
+def calculate_energies(angle: float) -> float:
+    en = calculate_energies_dummy(angle)
+    return en
+  
+
+#=======================================================================
+def calc_angles(arr):
+
+    ang1 = arr - np.roll(arr, -1, axis=1)
+    ang2 = arr - np.roll(arr, 1, axis=1)
+    ang3 = arr - np.roll(arr, -1, axis=0)
+    ang4 = arr - np.roll(arr, 1, axis=0)
+
+    angs = np.array([ang1, ang2, ang3, ang4])
+    
+    return angs
+
+
+#=======================================================================
+@nb.njit
+def calc_sum(ens0: float, ens1: float, ens2: float, ens3: float) -> float:
+    en = ens0 + ens1 + ens2 + ens3
+    return en
+
+
+@nb.vectorize([nb.float64(nb.float64, nb.float64, nb.float64, nb.float64)], target='parallel')
+def sum_ens(ens0,ens1,ens2,ens3):
+    en = calc_sum(ens0,ens1,ens2,ens3)
+    return en
+
+ 
+#=======================================================================
+def one_energy_vectorised(arr):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -160,31 +198,19 @@ def one_energy(arr,ix,iy,nmax):
 	Returns:
 	  en (float) = reduced energy of cell.
     """
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
+    en = np.zeros(arr.shape, dtype=np.float64)
 
-# HERE
-# PARALLELISE
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    angs = calc_angles(arr)
+    
+    ens = calculate_energies(angs)
+    en = sum_ens(ens[0], ens[1], ens[2], ens[3])
     return en
-  
-  
+    
+
+
+
 #=======================================================================
-def all_energy(arr,nmax):
+def all_energy(arr):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -195,27 +221,28 @@ def all_energy(arr,nmax):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
-    for i in range(nmax):
-        for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
-    return enall
-  
+    return np.sum(one_energy_vectorised(arr))
+   
   
 #=======================================================================
-@jit(nopython=True)
-def calc_order(Qab, delta, arr, nmax):
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in range(3):
-        for b in range(3):
-            for i in range(nmax):
-                for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
+@nb.njit
+def get_order_calc(lab, delta, norm_val):
+    Qab = np.zeros((2,2)) 
+    
+    lab_square = (3*lab**2)
+    lab_01_sum = np.sum(3*lab[0]*lab[1])
+    
+    Qab[0,0] = np.sum(lab_square[0] - delta[0,0])
+    Qab[0,1] = Qab[1,0] = lab_01_sum 
+    Qab[1,1] = np.sum(lab_square[1] - delta[1,1])
+    
+    Qab = Qab/(norm_val)
+    
     return Qab
+
   
-  
-def get_order(arr,nmax):
+#=======================================================================
+def get_order(arr,nmax, norm_val, delta):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -227,20 +254,56 @@ def get_order(arr,nmax):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
+    # Qab = np.zeros((3,3))
+    
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
     #
-    Qab = calc_order(Qab, delta, arr, nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    # lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    lab = np.vstack((np.cos(arr),np.sin(arr))).reshape(2,nmax,nmax)
+    # print(lab)
+    Qab = get_order_calc(lab, delta, norm_val)
+
+    eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
+  
+
+#=======================================================================
+@nb.vectorize([nb.float64(nb.float64, nb.float64)]) 
+def calc_boltz(arr, Ts):
+  boltz = np.exp( -(arr) / Ts )
+  return boltz
   
   
 #=======================================================================
-@jit(nopython=True)
-def MC_step(arr,Ts,nmax, accept, xran, yran, aran):
+@nb.njit
+def accept_torf(diff: float, boltz: float, rand_arr: float):
+    if (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) ):
+      return 0
+    else:
+      return 1
+    
+    
+@nb.vectorize([nb.int64(nb.float64, nb.float64, nb.float64)])
+def calc_accepted(diff, boltz, rand_arr):
+    accept_bool = accept_torf(diff, boltz, rand_arr)
+    return accept_bool
+  
+
+@nb.njit
+def calc_new_angle(ang1:float, ang2: float):
+  return ang1 + ang2
+
+@nb.guvectorize([(nb.float64[:,:], nb.float64[:,:], nb.float64[:,:])], '(n,n),(n,n)->(n,n)')
+def calc_angled_array(arr, angles, res):
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[0]):
+            res[i,j] = calc_new_angle(arr[i,j] , angles[i,j])
+  
+  
+#=======================================================================
+def MC_step(arr,Ts,scale,nmax, checkerboards ):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -261,29 +324,43 @@ def MC_step(arr,Ts,nmax, accept, xran, yran, aran):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
+    
 
-    for i in range(nmax):
-        for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
-
-                if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
-                else:
-                    arr[ix,iy] -= ang
-    return accept/(nmax*nmax)
+    # Calculate current energy of each cell
+    # LONG
+    en0 = one_energy_vectorised(arr)
+    
+    # Change each cell by a random angle
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+   
+    rand_arr = np.random.uniform(0.0, 1.0, (arr.shape))
+    
+        
+    num_accepted = 0
+    for board in checkerboards:
+      
+      # Change each cell by a random angle
+      arr += aran*board
+      
+      # calculate new energy of each cell, using the old angles for the adjacent cells
+      en1 = one_energy_vectorised(arr)
+      
+      # calculate difference in energy
+      diff = en1 - en0
+      
+      boltz = calc_boltz(diff, Ts)
+      
+      # accept new arrangement if energy is lower OR energy is higher and boltz calculation is greater than a random number between 0 and 1
+      accepted = (calc_accepted(diff, boltz, rand_arr))
+      
+      arr -= aran*board*accepted
+    
+    
+    num_accepted = np.sum(accepted)
+    
+    return num_accepted/(nmax*nmax)
   
- 
+  
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -307,28 +384,32 @@ def main(program, nsteps, nmax, temp, pflag):
     ratio = np.zeros(nsteps+1,dtype=np.float64)
     order = np.zeros(nsteps+1,dtype=np.float64)
     # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
+    energy[0] = all_energy(lattice)
     ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
+    
+    # take calculation outside loop
+    norm_val = 2*nmax*nmax
+    delta = np.eye(3,3)
+    order[0] = get_order(lattice,nmax,norm_val,delta)
+    
+    checkerboard1 = ( np.indices((nmax,nmax))[0] + np.indices((nmax,nmax))[1] ) % 2 
+    checkerboard2 = np.where((checkerboard1==0)|(checkerboard1==1), checkerboard1^1, checkerboard1)
+    checkerboards = [checkerboard1, checkerboard2]
 
+    scale=0.1+temp
     # Begin doing and timing some MC steps.
     initial = time.time()
-    scale=0.1+temp
-    accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice, temp, nmax, accept, xran, yran, aran)
-        energy[it] = all_energy(lattice,nmax)
-        order[it] = get_order(lattice,nmax)
+        ratio[it] = MC_step(lattice,temp,scale,nmax, checkerboards)
+        energy[it] = all_energy(lattice)
+        order[it] = get_order(lattice,nmax,norm_val, delta)
     final = time.time()
     runtime = final-initial
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
-    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
     
     
