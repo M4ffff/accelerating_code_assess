@@ -46,7 +46,38 @@ def initdat(nmax):
   
   
 #=======================================================================
-def plotdat(arr,pflag,nmax):
+def plot_reduced_e(energy, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, energy)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Reduced Energy")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order(order, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, order)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order_vs_temp(order, temp, nmax):
+  # needs error bars
+  fig, ax = plt.subplots()
+  ax.plot(temp, order)
+  ax.set_xlabel("Reduced Temperature, T*")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
+  plt.show()
+  
+  
+#=======================================================================
+def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None, nsteps=None):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -106,7 +137,12 @@ def plotdat(arr,pflag,nmax):
     ax.set_aspect('equal')
     plt.show()
     
-    
+    if final_data and pflag != 0:
+      plot_reduced_e(energy, nsteps, temp)
+      plot_order(order, nsteps, temp)
+      # plot_order_vs_temp(order, temp, nmax)  
+      
+      
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
@@ -296,38 +332,10 @@ def MC_step(arr,Ts,nmax):
                     arr[ix,iy] -= ang
     
     # print(arr)                
-    print(f"accepted: {accept}")
+    # print(f"accepted: {accept}")
     return accept/(nmax*nmax)
   
-  
-def plot_reduced_e(energy, nsteps, temp):
-  fig, ax = plt.subplots()
-  steps = np.arange(0,nsteps+1)
-  ax.plot(steps, energy)
-  ax.set_xlabel("MCS")
-  ax.set_ylabel("Reduced Energy")
-  ax.set_title(f"Reduced Temperature, T* = {temp}")
-  plt.show()
-  
-  
-def plot_order(order, nsteps, temp):
-  fig, ax = plt.subplots()
-  steps = np.arange(0,nsteps+1)
-  ax.plot(steps, order)
-  ax.set_xlabel("MCS")
-  ax.set_ylabel("Order Parameter")
-  ax.set_title(f"Reduced Temperature, T* = {temp}")
-  plt.show()
-  
-  
-def plot_order_vs_temp(order, temp, nmax):
-  # needs error bars
-  fig, ax = plt.subplots()
-  ax.plot(temp, order)
-  ax.set_xlabel("Reduced Temperature, T*")
-  ax.set_ylabel("Order Parameter")
-  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
-  plt.show()
+
   
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
@@ -362,9 +370,7 @@ def main(program, nsteps, nmax, temp, pflag):
         ratio[it] = MC_step(lattice,temp,nmax)
         energy[it] = all_energy(lattice,nmax)
         order[it] = get_order(lattice,nmax)
-    # plot_reduced_e(energy, nsteps, temp)
-    # plot_order(order, nsteps, temp)
-    # plot_order_vs_temp(order, temp, nmax)
+    
     final = time.time()
     runtime = final-initial
     
@@ -372,8 +378,10 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
     savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
-    
+    plotdat(lattice,pflag,nmax, True, energy, temp, order, nsteps)
+    # plot_reduced_e(energy, nsteps, temp)
+    # plot_order(order, nsteps, temp)
+    # plot_order_vs_temp(order, temp, nmax)
     
 #=======================================================================
 # Main part of program, getting command line arguments and calling

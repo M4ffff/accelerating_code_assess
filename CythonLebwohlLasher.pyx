@@ -96,25 +96,26 @@ def all_energy_cythonised(double[:,:] arr, int nmax):
   
 #=======================================================================
 
-def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int threads):
+def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int factor):#, int threads):
   cdef:
     int a, b, i, j
-    int factor
 
-  factor = 2*nmax*nmax
+  
   for a in range(2):
       for b in range(2):
-          for i in prange(nmax, nogil=True, num_threads=threads):
+          # for i in prange(nmax, nogil=True, num_threads=threads):
+          for i in range(nmax):
               for j in range(nmax):
                   Qab[a,b] += ( 3*lab[a,i,j]*lab[b,i,j] - delta[a,b] ) / factor
   return Qab
 
 
 @boundscheck(False)
-def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax, int threads):
+def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax): #, int threads):
     cdef: 
       int i, j
-    for i in prange(nmax, nogil=True, num_threads=threads):
+    # for i in prange(nmax, nogil=True, num_threads=threads):
+    for i in range(nmax):
       for j in range(nmax):
         lab[0, i, j] = cos(arr[i,j])
         lab[1, i, j] = sin(arr[i,j])
@@ -128,11 +129,11 @@ def calc_boltz(double diff, double Ts):
   return boltzval
 
 
-def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[:,:] randarr, int threads):
+def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[:,:] randarr): #, int threads):
       cdef: 
         int accept = 0
         int i, j
-        double diff
+        double diff, boltz
         double ang, en0, en1
 
       for i in range(nmax):
@@ -161,4 +162,48 @@ def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[
       return accept
 
 
+#=======================================================================
+def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale): #, threads):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  Ts (float) = reduced temperature (range 0 to 2);
+      nmax (int) = side length of square lattice.
+    Description:
+      Function to perform one MC step, which consists of an average
+      of 1 attempted change per lattice site.  Working with reduced
+      temperature Ts = kT/epsilon.  Function returns the acceptance
+      ratio for information.  This is the fraction of attempted changes
+      that are successful.  Generally aim to keep this around 0.5 for
+      efficient simulation.
+	Returns:
+	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
+    """
+    #
+    # Pre-compute some random numbers.  This is faster than
+    # using lots of individual calls.  "scale" sets the width
+    # of the distribution for the angle changes - increases
+    # with temperature.
+    # std
+    cdef:
+      int accept = 0
+      double[:,:] aran
+      double[:,:] boltzran
 
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
+    
+    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran)#, threads)
+    
+    # print(arr)                
+    # print(f"accepted: {accept}")
+    return accept/(nmax*nmax)
+
+
+def main_loop(double[:,:] lattice,double temp, int nmax, double scale):
+    cdef:
+      double ratio
+      double energy
+    ratio = MC_step_cythonised(lattice,temp,nmax, scale) #, threads)
+    energy = all_energy_cythonised(lattice,nmax)
+    return ratio, energy

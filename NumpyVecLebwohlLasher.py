@@ -44,9 +44,40 @@ def initdat(nmax):
     arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
     return arr
   
+
+#=======================================================================
+def plot_reduced_e(energy, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, energy)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Reduced Energy")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order(order, nsteps, temp):
+  fig, ax = plt.subplots()
+  steps = np.arange(0,nsteps+1)
+  ax.plot(steps, order)
+  ax.set_xlabel("MCS")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"Reduced Temperature, T* = {temp}")
+  plt.show()
+  
+  
+def plot_order_vs_temp(order, temp, nmax):
+  # needs error bars
+  fig, ax = plt.subplots()
+  ax.plot(temp, order)
+  ax.set_xlabel("Reduced Temperature, T*")
+  ax.set_ylabel("Order Parameter")
+  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
+  plt.show()
+  
   
 #=======================================================================
-def plotdat(arr,pflag,nmax):
+def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None, nsteps=None):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -99,7 +130,10 @@ def plotdat(arr,pflag,nmax):
     ax.set_aspect('equal')
     plt.show()
     
-    
+    if final_data and pflag != 0:
+      plot_reduced_e(energy, nsteps, temp)
+      plot_order(order, nsteps, temp)
+      # plot_order_vs_temp(order, temp, nmax)   
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
@@ -333,7 +367,7 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     # Plot final frame of lattice and generate output file
     savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
+    plotdat(lattice,pflag,nmax, True, energy, temp, order, nsteps)
     
     
 #=======================================================================
