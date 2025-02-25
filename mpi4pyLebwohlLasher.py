@@ -29,7 +29,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-
 import os
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
@@ -112,16 +111,22 @@ def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None
     # no plotting
     if pflag==0:
         return
+      
+    # x and y components of quivers
     u = np.cos(arr)
     v = np.sin(arr)
+    
+    # x and y positions of quivers
     x = np.arange(nmax)
     y = np.arange(nmax)
+    
+    # colours
     cols = np.zeros((nmax,nmax))
     
     if pflag==1: # colour the arrows according to energy
         mpl.rc('image', cmap='rainbow')
         
-        # HERE - CYTHONISE OR MORE EFFICIENT WAY OF CALCULATING MIN/MAX
+        # calc colour of each quiver
         for i in range(nmax):
             for j in range(nmax):
                 cols[i,j] = one_energy(arr,i,j,nmax)
@@ -138,17 +143,18 @@ def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None
         norm = plt.Normalize(vmin=0, vmax=1)
 
     quiveropts = dict(headlength=0,pivot='middle',headwidth=1,scale=1.1*nmax)
-    fig, ax = plt.subplots()
     
-    # WHY IS THIS SET EQUAL TO q?
-    q = ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
+    fig, ax = plt.subplots()
+    ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
     ax.set_aspect('equal')
     plt.show()
     
     if final_data and pflag != 0:
       plot_reduced_e(energy, nsteps, temp)
       plot_order(order, nsteps, temp)
-      # plot_order_vs_temp(order, temp, nmax)
+      # plot_order_vs_temp(order, temp, nmax)  
+      
+      
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
@@ -202,13 +208,17 @@ def one_energy(arr,ix,iy,nmax):
       reduced energy (U/epsilon), equivalent to setting epsilon=1 in
       equation (1) in the project notes.
 	Returns:
-	  en (float) = reduced energy of cell.
+	  energy (float) = reduced energy of cell.
     """
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
+    energy = 0.0
+    
+    # adjacent in x direction (right/left)
+    ixr = (ix+1)%nmax # These are the coordinates
+    ixl = (ix-1)%nmax # of the neighbours with wraparound
+    
+    # adjacent in y direction (up/down)
+    iyu = (iy+1)%nmax # 
+    iyd = (iy-1)%nmax #
 #
 # Add together the 4 neighbour contributions
 # to the energy
@@ -216,56 +226,20 @@ def one_energy(arr,ix,iy,nmax):
 
 # HERE
 # PARALLELISE
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    return en
+    # 
+    ang = arr[ix,iy]-arr[ixr,iy]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ixl,iy]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iyu]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = arr[ix,iy]-arr[ix,iyd]
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    return energy
   
   
 #=======================================================================
-def one_energy_mpi(current_row, above_row, below_row,ix,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function that computes the energy of a single cell of the
-      lattice taking into account periodic boundaries.  Working with
-      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
-      equation (1) in the project notes.
-	Returns:
-	  en (float) = reduced energy of cell.
-    """
-    en = 0.0
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
-
-# HERE
-# PARALLELISE
-    ang = current_row[ix]-current_row[(ix+1)%nmax]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = current_row[ix]-current_row[(ix-1)%nmax]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = current_row[ix]-above_row[ix]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = current_row[ix]-below_row[ix]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    return en
-  
-  
-  
-  
-#=======================================================================
-def all_energy(arr,nmax):
+def all_energy(arr,rows,nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -277,14 +251,14 @@ def all_energy(arr,nmax):
 	  enall (float) = reduced energy of lattice.
     """
     enall = 0.0
-    for i in range(nmax):
+    for i in range(1,rows+1):
         for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
   
   
 #=======================================================================
-def get_order(arr,nmax):
+def get_order(arr,rows,nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -302,42 +276,20 @@ def get_order(arr,nmax):
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
     #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,rows,nmax)
     for a in range(3):
         for b in range(3):
-            for i in range(nmax):
+            for i in range(rows):
                 for j in range(nmax):
                     Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
+    Qab = Qab/(2*rows*nmax) 
     eigenvalues = np.linalg.eig(Qab)[0]
+    # print(f"eigenvalues.shape: {eigenvectors.shape}")
     return eigenvalues.max()
   
   
-def update(current_row, above_row, below_row, aran, nmax, Ts):
-    accept = 0
-    for iy in range(nmax):
-        ang = aran[iy]
-        en0 = one_energy_mpi(current_row, above_row, below_row,iy,nmax)
-        current_row[iy] += ang
-        en1 = one_energy_mpi(current_row, above_row, below_row,iy,nmax)
-        if en1<=en0:
-            accept += 1
-        else:
-        # Now apply the Monte Carlo test - compare
-        # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-            boltz = np.exp( -(en1 - en0) / Ts )
-
-            if boltz >= np.random.uniform(0.0,1.0):
-                accept += 1
-            else:
-                current_row[iy] -= ang
-                
-    return accept
-  
-  
-  
 #=======================================================================
-def MC_step(arr,Ts,nmax, comm):
+def MC_step(arr, Ts,rows, nmax, comm, above, below, LTAG, RTAG):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -358,71 +310,57 @@ def MC_step(arr,Ts,nmax, comm):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
+    # std
     scale=0.1+Ts
     accept = 0
+    xran = np.random.randint(1,high=rows+1, size=(nmax,nmax))
+    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    # print("0")
-  
-    MAXWORKER  = 17          # maximum number of worker tasks
-    MINWORKER  = 1          # minimum number of worker tasks
-    BEGIN      = 1          # message tag
-    LTAG       = 2          # message tag
-    RTAG       = 3          # message tag
-    NONE       = 0          # indicates no neighbour
-    DONE       = 4          # message tag
-    MASTER     = 0          # taskid of first process
+    for i in range(1, rows+1):
+        if i == 3:
+            # receive first row from below
+            comm.Irecv([arr[rows+1], MPI.DOUBLE], source=below, tag=LTAG)
+        for j in range(nmax):
+            # pick random x coordinate
+            ix = xran[i,j]
+            # pick random y coordinate
+            iy = yran[i,j]
+            # pick random angle
+            ang = aran[i,j]
 
-        # u = np.zeros((2,NXPROB,NYPROB))        # array for grid
+            # old_energy
+            en0 = one_energy(arr,ix,iy,nmax)
+            
+            # new energy
+            arr[ix,iy] += ang
+            en1 = one_energy(arr,ix,iy,nmax)
+                
+                
+                
+            if en1<=en0:
+                accept += 1
+            else:
+            # Now apply the Monte Carlo test - compare
+            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                boltz = np.exp( -(en1 - en0) / Ts )
 
-# First, find out my taskid and how many tasks are running
-    numtasks = comm.Get_size()
-    numworkers = numtasks-1
-    # print("1")
+                if boltz >= np.random.uniform(0.0,1.0):
+                    accept += 1
+                else:
+                    arr[ix,iy] -= ang
+                    
+        if i == 1:
+            # send first row up
+            # send first row above
+            req=comm.Isend([arr[i], MPI.DOUBLE], dest=above, tag=RTAG)
+            
 
-
-# Distribute work to workers.  Must first figure out how many rows to
-# send and what to do with extra rows.
-    averow = nmax // numworkers
-    extra = nmax % numworkers
-    offset = 0
-    for i in range(1,numworkers+1):
-        rows = averow
-        if i <= extra:
-            rows+=1
-
-    # Tell each worker who its neighbors are, since they must exchange
-    # data with each other.
-        above = (i - 1) % numworkers
-        below = (i + 1) % numworkers
-
-    # Now send startup information to each worker 
-        # print("sending")
-        comm.send(offset, dest=i, tag=BEGIN)
-        comm.send(rows, dest=i, tag=BEGIN)
-        comm.send(above, dest=i, tag=BEGIN)
-        comm.send(below, dest=i, tag=BEGIN)
-        comm.Send([arr[offset:offset+rows], MPI.DOUBLE], dest=i, tag=BEGIN)
-        comm.Send([aran[offset:offset+rows], MPI.DOUBLE], dest=i, tag=BEGIN)
-        # print("sending 2")
-        offset += rows
-        
-        
-    # print("all workers sent")
-# Now wait for results from all worker tasks 
-# NEED TO DO
-    for i in range(1,numworkers+1):
-        offset = comm.recv(source=i, tag=DONE)
-        rows = comm.recv(source=i, tag=DONE)
-        local_accept = comm.recv(source=i, tag=DONE)
-        comm.Recv([arr[offset:offset+rows], MPI.DOUBLE], source=i, tag=DONE)
-        accept += int(local_accept)
-
-    # print(f"accept: {accept}")
     return accept/(nmax*nmax)
-    # End of master code
-    
+  
 
-    
+
+        
+        
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -443,7 +381,6 @@ def main(program, nsteps, nmax, temp, pflag):
     BEGIN      = 1          # message tag
     LTAG       = 2          # message tag
     RTAG       = 3          # message tag
-    NONE       = 0          # indicates no neighbour
     DONE       = 4          # message tag
     MASTER     = 0          # taskid of first process
     
@@ -460,35 +397,79 @@ def main(program, nsteps, nmax, temp, pflag):
             print("Quitting...")
             comm.Abort()
             
-        print("running main")
         # Create and initialise lattice
         lattice = initdat(nmax)
-        for i in range(1, numworkers+1):
-            comm.Send([lattice, MPI.DOUBLE], dest=i, tag=BEGIN)
-            comm.send(temp, dest=i, tag=BEGIN)
-            comm.send(nsteps, dest=i, tag=BEGIN)
-        
-        print("lattice and temp sent")
         
         # Plot initial frame of lattice
         plotdat(lattice,pflag,nmax)
+        
         # Create arrays to store energy, acceptance ratio and order parameter
-        energy = np.zeros(nsteps+1,dtype=np.float64)
         ratio = np.zeros(nsteps+1,dtype=np.float64)
+        energy = np.zeros(nsteps+1,dtype=np.float64)
         order = np.zeros(nsteps+1,dtype=np.float64)
-        # Set initial values in arrays
-        energy[0] = all_energy(lattice,nmax)
-        ratio[0] = 0.5 # ideal value
-        order[0] = get_order(lattice,nmax)
+        
 
-        # Begin doing and timing some MC steps.
+        # Distribute work to workers.  Must first figure out how many rows to
+        # send and what to do with extra rows.
+        averow = nmax // numworkers
+        extra = nmax % numworkers
+        offset = 0
+        
         initial = MPI.Wtime()
-        for it in range(1,nsteps+1):
-            ####################################################################################################################
-            ratio[it] = MC_step(lattice,temp,nmax, comm)
-            ####################################################################################################################
-            energy[it] = all_energy(lattice,nmax)
-            order[it] = get_order(lattice,nmax)
+        
+        for i in range(1,numworkers+1):
+            rows = averow
+            if i <= extra:
+                rows+=1
+
+        # Tell each worker who its neighbors are, since they must exchange
+        # data with each other.
+            above = (i - 1) % numworkers
+            below = (i + 1) % numworkers
+
+
+            comm.send(offset, dest=i, tag=BEGIN)
+            comm.send(rows, dest=i, tag=BEGIN)
+            comm.send(above, dest=i, tag=BEGIN)
+            comm.send(below, dest=i, tag=BEGIN)
+
+            # comm.Send([lattice, MPI.DOUBLE], dest=i, tag=BEGIN)
+            comm.send(temp, dest=i, tag=BEGIN)
+            comm.send(nsteps, dest=i, tag=BEGIN)
+            comm.send(nmax, dest=i, tag=BEGIN)
+            
+            if offset==0:
+                lattice = np.roll(lattice, 1, axis=0)
+                comm.Send(([lattice[offset-1:offset+rows+1, :], (rows+2)*nmax, MPI.DOUBLE]), dest=i, tag=BEGIN)
+                # unroll
+                lattice = np.roll(lattice, -1, axis=0)
+            elif offset+rows == nmax:
+                lattice = np.roll(lattice, -1, axis=0)
+                comm.Send(([lattice[offset-1:offset+rows+1, :], (rows+2)*nmax, MPI.DOUBLE]), dest=i, tag=BEGIN)
+                # unroll
+                lattice = np.roll(lattice, 1, axis=0)
+            else:
+                # send segment of lattice
+                comm.Send([lattice[offset-1:offset+rows+1, :], (rows+2)*nmax, MPI.DOUBLE], dest=i, tag=BEGIN)
+            
+            offset += rows
+            
+        for i in range(1,numworkers+1):
+            offset = comm.recv(source=i, tag=DONE)
+            rows = comm.recv(source=i, tag=DONE)
+            comm.Recv(lattice[offset:offset+rows, :], source=i, tag=DONE)
+        
+        
+        # Sum over worker-local total energy values.
+        # Sum over worker-local order parameter values.
+        # Sum over worker-local number of accepted cell orientation changes values.
+        comm.Reduce(MPI.IN_PLACE, ratio, op=MPI.SUM, root=MASTER)
+        comm.Reduce(MPI.IN_PLACE, energy, op=MPI.SUM, root=MASTER)
+        comm.Reduce(MPI.IN_PLACE, order, op=MPI.SUM, root=MASTER)
+        
+        
+        
+        
         final = MPI.Wtime()
         runtime = final-initial
         
@@ -497,117 +478,60 @@ def main(program, nsteps, nmax, temp, pflag):
         # Plot final frame of lattice and generate output file
         # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
         plotdat(lattice,pflag,nmax, True, energy, temp, order, nsteps)
-    
-    
-    
+        # plot_reduced_e(energy, nsteps, temp)
+        # plot_order(order, nsteps, temp)
+        # plot_order_vs_temp(order, temp, nmax)
+        
     #************************* workers code **********************************/
     elif taskid != MASTER:
-      
-        lattice = np.zeros((nmax, nmax))
-        comm.Recv([lattice, MPI.DOUBLE], source=MASTER, tag=BEGIN)
-      
-        Ts = comm.recv(source=MASTER, tag=BEGIN)
+        
+        offset = comm.recv(source=MASTER, tag=BEGIN)
+        rows = comm.recv(source=MASTER, tag=BEGIN)
+        above = comm.recv(source=MASTER, tag=BEGIN)
+        below = comm.recv(source=MASTER, tag=BEGIN)
+        
+        temp = comm.recv(source=MASTER, tag=BEGIN)
         nsteps = comm.recv(source=MASTER, tag=BEGIN)
-      
+        nmax = comm.recv(source=MASTER, tag=BEGIN)
         
-    # Array is already initialized to zero - including the borders
-    # Receive offset, rows, neighbors and grid section from master
-        for i in range(nsteps):
-            offset = comm.recv(source=MASTER, tag=BEGIN)
-            rows = comm.recv(source=MASTER, tag=BEGIN)
-            above = comm.recv(source=MASTER, tag=BEGIN)
-            below = comm.recv(source=MASTER, tag=BEGIN)
-            comm.Recv([lattice[offset:offset+rows], MPI.DOUBLE], source=MASTER, tag=BEGIN)
-            
-            aran_rows = np.zeros_like(lattice[offset:offset+rows])
-            comm.Recv([aran_rows, MPI.DOUBLE], source=MASTER, tag=BEGIN)
-
-            
-            min_rows = offset
-            max_rows = rows+offset
-
-
-        # Begin doing STEPS iterations.  Must communicate border rows with
-        # neighbours.  If I have the first or last grid row, then I only need
-        # to  communicate with one neighbour
+        local_lattice = np.zeros((rows+2,nmax), dtype=np.float64)
+        comm.Recv([local_lattice, (rows+2)*nmax, MPI.DOUBLE], source=MASTER, tag=BEGIN)
         
-            above_row_recieved = np.zeros_like(lattice[0])
-            below_row_recieved = np.zeros_like(lattice[0])
- 
-                    
-            #######################################################################################
-                   
-            if above % 2 == 0:
-                # send last row below
-                # print("send last row below")
-                req=comm.Isend([lattice[offset+rows-1], MPI.DOUBLE], dest=below, tag=LTAG)
-            
-                # print("receive last row from above")
-                comm.Irecv([above_row_recieved, MPI.DOUBLE], source=above, tag=RTAG)
+        
+        
+        worker_ratio = np.zeros(nsteps+1, dtype=np.float64)
+        worker_energy = np.zeros(nsteps+1, dtype=np.float64)
+        worker_order = np.zeros(nsteps+1, dtype=np.float64)
+        
+                ################
+        # Set initial values in arrays
+        worker_energy[0] = all_energy(local_lattice,rows,nmax)
+        worker_ratio[0] = 0.5 # ideal value
+        # print(local_lattice)
+        worker_order[0] = get_order(local_lattice[1:-1,:],rows,nmax)
+        
                 
-            else:                
-                # print("receive last row from above")
-                comm.Irecv([above_row_recieved, MPI.DOUBLE], source=above, tag=RTAG)
-                
-                # send last row below
-                # print("send last row below")
-                req=comm.Isend([lattice[offset+rows-1], MPI.DOUBLE], dest=below, tag=LTAG)
+        for it in range(1,nsteps+1):
+            worker_ratio[it] = MC_step(local_lattice, temp, rows, nmax, comm, above, below, LTAG, RTAG)
+            worker_energy[it] = all_energy(local_lattice,rows,nmax)
+            worker_order[it] = get_order(local_lattice[1:-1,:],rows,nmax)
+        # return ratio, energy, order
             
-            # print("entering rows iteration")
-            for row in range(min_rows, max_rows):
-                above_row = np.zeros_like(lattice[row])
-                below_row = np.zeros_like(lattice[row])
-                
-                if row == min_rows:
-                    # use received row from above neighbour
-                    above_row = above_row_recieved
-                else:
-                    above_row = lattice[row-1]
-                    
-                if row == max_rows - 1:
-                    # use received row from below neighbour
-                    # this will be an updated version
-                    below_row = below_row_recieved
-                else:
-                    below_row = lattice[row+1]
-                    
-                aran_row = aran_rows[row-offset]
-                        
-                # update the values in lattice
-                accept = update(lattice[row], above_row, below_row, aran_row, nmax, Ts)
+            
+        comm.send(offset, dest=MASTER, tag=DONE)
+        comm.send(rows, dest=MASTER, tag=DONE)
+            
+        print(local_lattice[1:-1, :].shape)
+            
+        # send lattice back
+        comm.Send(local_lattice[1:-1, :], dest=MASTER, tag=DONE)
 
-                # if first row, send new values above (for when bottom row of above worker's section is being calculated )
-                # updates "below_row_received"
-                if row == min_rows:
-                    # align send/receives
-                    if above % 2 == 0:
-                        # send first row above
-                        req=comm.Isend([lattice[row], MPI.DOUBLE], dest=above, tag=RTAG)
-                        
-                        # receive first row from below
-                        comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
-                          
-                    else:
-                        # receive first row from below
-                        comm.Irecv([below_row_recieved, MPI.DOUBLE], source=above, tag=LTAG)
-                        
-                        # send first row above
-                        req=comm.Isend([lattice[row], MPI.DOUBLE], dest=above, tag=RTAG)              
+        # Send values back to master
+        comm.Reduce(worker_ratio, None, op=MPI.SUM, root=MASTER)
+        comm.Reduce(worker_energy, None, op=MPI.SUM, root=MASTER)
+        comm.Reduce(worker_order, None, op=MPI.SUM, root=MASTER)
 
 
-        # Finally, send my portion of final results back to master
-            comm.send(offset, dest=MASTER, tag=DONE)
-            comm.send(rows, dest=MASTER, tag=DONE)
-            comm.send(accept, dest=MASTER, tag=DONE)
-            comm.Send([lattice[offset:offset+rows], MPI.DOUBLE], dest=MASTER, tag=DONE)
-        
-        
-
-    
-    
-    
-    
-    
 #=======================================================================
 # Main part of program, getting command line arguments and calling
 # main simulation function.
@@ -622,4 +546,4 @@ if __name__ == '__main__':
         main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
     else:
         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
-#======================================================================= 
+#=======================================================================
