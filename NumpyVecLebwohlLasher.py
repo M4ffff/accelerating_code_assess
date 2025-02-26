@@ -1,11 +1,11 @@
 """
-Basic Python Lebwohl-Lasher code.  Based on the paper 
+Numpy vectorised Python Lebwohl-Lasher code.  Based on the paper 
 P.A. Lebwohl and G. Lasher, Phys. Rev. A, 6, 426-429 (1972).
 This version in 2D.
 
 Run at the command line by typing:
 
-python LebwohlLasher.py <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>
+python NumpyVecLebwohlLasher.py <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>
 
 where:
   ITERATIONS = number of Monte Carlo steps, where 1MCS is when each cell
@@ -15,11 +15,10 @@ where:
   PLOTFLAG = 0 for no plot, 1 for energy plot and 2 for angle plot.
   
 The initial configuration is set at random. The boundaries
-are periodic throughout the simulation.  During the
-time-stepping, an array containing two domains is used; these
-domains alternate between old data and new data.
+are periodic throughout the simulation. 
+A checkerboard method is used to update the array in each timestep. 
 
-SH 16-Oct-23
+
 """
 
 import sys
@@ -47,6 +46,14 @@ def initdat(nmax):
 
 #=======================================================================
 def plot_reduced_e(energy, nsteps, temp):
+  """
+  Plot reduced energy against number of monte carlo steps
+
+  Args:
+      energy (arr): array of reduced energies
+      nsteps (int): number of steps
+      temp (float): temperature of simulation
+  """
   fig, ax = plt.subplots()
   steps = np.arange(0,nsteps+1)
   ax.plot(steps, energy)
@@ -57,6 +64,14 @@ def plot_reduced_e(energy, nsteps, temp):
   
   
 def plot_order(order, nsteps, temp):
+  """
+  Plot of order against number of monte carlo steps
+
+  Args:
+      order (arr): array of order throughout simulation
+      nsteps (int): number of steps
+      temp (float): temperature of simulation
+  """
   fig, ax = plt.subplots()
   steps = np.arange(0,nsteps+1)
   ax.plot(steps, order)
@@ -65,15 +80,6 @@ def plot_order(order, nsteps, temp):
   ax.set_title(f"Reduced Temperature, T* = {temp}")
   plt.show()
   
-  
-def plot_order_vs_temp(order, temp, nmax):
-  # needs error bars
-  fig, ax = plt.subplots()
-  ax.plot(temp, order)
-  ax.set_xlabel("Reduced Temperature, T*")
-  ax.set_ylabel("Order Parameter")
-  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
-  plt.show()
   
   
 #=======================================================================
@@ -130,10 +136,12 @@ def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None
     ax.set_aspect('equal')
     plt.show()
     
+    # if doing a plot of cell, also show how energy and order vary over course of simulation
     if final_data and pflag != 0:
       plot_reduced_e(energy, nsteps, temp)
       plot_order(order, nsteps, temp)
-      # plot_order_vs_temp(order, temp, nmax)   
+      
+        
 #=======================================================================
 def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     """
@@ -175,6 +183,15 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
    
    
 def calc_angles(arr):
+    """
+    calculate angles between cell and adjacent cells
+
+    Args:
+        arr (float(nmax,nmax)) = array that contains lattice data;
+
+    Returns:
+        (float(4)): array that contains angle between cell and each adjacent cell
+    """
 
     ang1 = arr - np.roll(arr, -1, axis=1)
     ang2 = arr - np.roll(arr, 1, axis=1)
@@ -191,16 +208,14 @@ def one_energy_vectorised(arr):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
+
     Description:
-      Function that computes the energy of a single cell of the
+      Function that computes the energy of every cell of the
       lattice taking into account periodic boundaries.  Working with
       reduced energy (U/epsilon), equivalent to setting epsilon=1 in
       equation (1) in the project notes.
 	Returns:
-	  en (float) = reduced energy of cell.
+	  en (arr(nmax*nmax)) = reduced energy of cell.
     """
     en = np.zeros(arr.shape, dtype=np.float64)
 
@@ -216,51 +231,6 @@ def one_energy_vectorised(arr):
     
   
 #=======================================================================
-def one_energy(arr,ix,iy,nmax):
-    """
-    Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function that computes the energy of a single cell of the
-      lattice taking into account periodic boundaries.  Working with
-      reduced energy (U/epsilon), equivalent to setting epsilon=1 in
-      equation (1) in the project notes.
-	Returns:
-	  energy (float) = reduced energy of cell.
-    """
-    energy = 0.0
-    
-    # adjacent in x direction (right/left)
-    ixr = (ix+1)%nmax # These are the coordinates of the neighbours (including wrapped around)
-    ixl = (ix-1)%nmax #  
-    
-    # adjacent in y direction (up/down)
-    iyu = (iy+1)%nmax # 
-    iyd = (iy-1)%nmax #
-#
-# Add together the 4 neighbour contributions
-# to the energy
-#
-
-# HERE
-# PARALLELISE
-    # 
-    ang = arr[ix,iy]-arr[ixr,iy]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixl,iy]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyu]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyd]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    return energy
-  
-  
-  
-#=======================================================================
 def all_energy(arr):
     """
     Arguments:
@@ -272,7 +242,8 @@ def all_energy(arr):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    return np.sum(one_energy_vectorised(arr))
+    enall = np.sum(one_energy_vectorised(arr))
+    return enall
   
 
   
@@ -290,17 +261,13 @@ def get_order(arr, nmax, norm_val, delta):
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
     Qab = np.zeros((3,3), dtype=np.float64)
-    # Qab = np.zeros((2,2), dtype=np.float64)
-    #
-    # Generate a 3D unit vector for each cell (i,j) and
-    # put it in a (3,i,j) array.
-    #
-    # lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    
     lab = np.vstack((np.cos(arr),np.sin(arr))).reshape(2,nmax,nmax)
-    # print(lab)
-    lab_square = (3*lab**2)
+    
+    lab_square = (3*lab*lab)
     lab_01_sum = np.sum(3*lab[0]*lab[1])
     
+    # calculate separately to reduce time
     Qab[0,0] = np.sum(lab_square[0] - delta[0,0])
     Qab[0,1] = Qab[1,0] = lab_01_sum 
     Qab[1,1] = np.sum(lab_square[1] - delta[1,1])
@@ -318,10 +285,9 @@ def MC_step(arr,Ts,scale,nmax, checkerboards ):
 	  arr (float(nmax,nmax)) = array that contains lattice data;
 	  Ts (float) = reduced temperature (range 0 to 2);
       nmax (int) = side length of square lattice.
+      checkerboards(list(arr)) = list of checkerboards: ( white squares, black squars)
     Description:
-      Function to perform one MC step, which consists of an average
-      of 1 attempted change per lattice site.  Working with reduced
-      temperature Ts = kT/epsilon.  Function returns the acceptance
+      Function to perform one MC step. Function returns the acceptance
       ratio for information.  This is the fraction of attempted changes
       that are successful.  Generally aim to keep this around 0.5 for
       efficient simulation.

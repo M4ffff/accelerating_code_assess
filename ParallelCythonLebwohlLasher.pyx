@@ -1,5 +1,5 @@
 """
-See run_cython.py
+See run_parallel_cython.py
 """
 
 import sys
@@ -84,7 +84,7 @@ def all_energy_cythonised(double[:,:] arr, int nmax):
   
 #=======================================================================
 @boundscheck(False)
-def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int factor):
+def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] delta, int factor, int threads):
   """
   calculate order tensor
 
@@ -110,7 +110,7 @@ def get_order_loop(double[:,:] Qab, int nmax, double[:,:,:] lab, double[:,:] del
 
 
 @boundscheck(False)
-def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax):
+def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax, int threads):
     """
     calcualte lab
 
@@ -123,8 +123,8 @@ def get_lab(double[:,:,:] lab, double[:,:] arr, int nmax):
     
     cdef: 
       int i, j
-    #for i in prange(nmax, nogil=True, num_threads=threads):
-    for i in range(nmax):
+    for i in prange(nmax, nogil=True, num_threads=threads):
+    #for i in range(nmax):
       for j in range(nmax):
         lab[0, i, j] = cos(arr[i,j])
         lab[1, i, j] = sin(arr[i,j])
@@ -144,7 +144,7 @@ cdef double calc_boltz(double diff, double Ts) nogil:
   return boltzval
 
 @boundscheck(False)
-def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[:,:] randarr):
+def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[:,:] randarr, int threads):
       """
       determine new energies and whether to keep them
 
@@ -164,7 +164,7 @@ def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[
         double diff, boltz
         double ang, en0, en1
 
-      for i in range(0, nmax, 2):
+      for i in prange(0, nmax, 2, nogil=True, num_threads=threads):
         for j in range(nmax):
             # pick random angle
 
@@ -185,11 +185,12 @@ def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[
                 boltz = calc_boltz(diff, Ts)
 
                 if boltz >= randarr[i,j]:
+                  with gil:
                     accept += 1
                 else:
                     arr[i,j] -= ang
 
-      for i in range(1, nmax, 2):
+      for i in prange(1, nmax, 2, nogil=True, num_threads=threads):
         for j in range(nmax):
             # pick random angle
 
@@ -203,6 +204,7 @@ def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[
             en1 = one_energy_cythonised(arr,i,j,nmax)
             diff = en1 - en0
             if diff<=0:
+              with gil:
                 accept += 1
             else:
             # Now apply the Monte Carlo test - compare
@@ -217,7 +219,7 @@ def MC_step_loop(double[:,:] aran, int nmax, double[:,:] arr, double Ts, double[
 
 
 #=======================================================================
-def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale):
+def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale, int threads):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -248,7 +250,7 @@ def MC_step_cythonised(double[:,:] arr, double Ts, int nmax, double scale):
     aran = np.random.normal(scale=scale, size=(nmax,nmax))
     boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     
-    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran)
+    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran, threads)
     
     # print(arr)                
     # print(f"accepted: {accept}")

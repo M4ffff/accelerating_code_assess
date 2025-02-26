@@ -1,11 +1,11 @@
 """
-Basic Python Lebwohl-Lasher code.  Based on the paper 
+Numba vectorised Lebwohl-Lasher code.  Based on the paper 
 P.A. Lebwohl and G. Lasher, Phys. Rev. A, 6, 426-429 (1972).
 This version in 2D.
 
 Run at the command line by typing:
 
-python LebwohlLasher.py <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>
+python NumbaLebwohlLasher.py <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>
 
 where:
   ITERATIONS = number of Monte Carlo steps, where 1MCS is when each cell
@@ -13,13 +13,13 @@ where:
   SIZE = side length of square lattice
   TEMPERATURE = reduced temperature in range 0.0 - 2.0.
   PLOTFLAG = 0 for no plot, 1 for energy plot and 2 for angle plot.
+  THREADS = number of parallel threads to run simulation with.
   
 The initial configuration is set at random. The boundaries
-are periodic throughout the simulation.  During the
-time-stepping, an array containing two domains is used; these
-domains alternate between old data and new data.
+are periodic throughout the simulation.  
 
-SH 16-Oct-23
+A checkerboard method is used to update the array in each timestep. 
+
 """
 
 import sys
@@ -50,6 +50,14 @@ def initdat(nmax):
   
 #=======================================================================
 def plot_reduced_e(energy, nsteps, temp):
+  """
+  Plot reduced energy against number of monte carlo steps
+
+  Args:
+      energy (arr): array of reduced energies
+      nsteps (int): number of steps
+      temp (float): temperature of simulation
+  """
   fig, ax = plt.subplots()
   steps = np.arange(0,nsteps+1)
   ax.plot(steps, energy)
@@ -60,6 +68,14 @@ def plot_reduced_e(energy, nsteps, temp):
   
   
 def plot_order(order, nsteps, temp):
+  """
+  Plot of order against number of monte carlo steps
+
+  Args:
+      order (arr): array of order throughout simulation
+      nsteps (int): number of steps
+      temp (float): temperature of simulation
+  """
   fig, ax = plt.subplots()
   steps = np.arange(0,nsteps+1)
   ax.plot(steps, order)
@@ -68,17 +84,7 @@ def plot_order(order, nsteps, temp):
   ax.set_title(f"Reduced Temperature, T* = {temp}")
   plt.show()
   
-  
-def plot_order_vs_temp(order, temp, nmax):
-  # needs error bars
-  fig, ax = plt.subplots()
-  ax.plot(temp, order)
-  ax.set_xlabel("Reduced Temperature, T*")
-  ax.set_ylabel("Order Parameter")
-  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
-  plt.show()
-  
-  
+
   
 #=======================================================================
 def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None, nsteps=None):
@@ -132,12 +138,13 @@ def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None
     # WHY IS THIS SET EQUAL TO q?
     q = ax.quiver(x, y, u, v, cols,norm=norm, **quiveropts)
     ax.set_aspect('equal')
+    ax.set_title(f"Reduced Temperature, T* = {temp}")
     plt.show()
     
+    # if doing a plot of cell, also show how energy and order vary over course of simulation
     if final_data and pflag != 0:
       plot_reduced_e(energy, nsteps, temp)
       plot_order(order, nsteps, temp)
-      # plot_order_vs_temp(order, temp, nmax)
     
     
 #=======================================================================
@@ -183,18 +190,45 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 #=======================================================================
 @nb.njit
 def calculate_energies_dummy(angle: float) -> float:
-    en = 0.5*(1.0 - 3.0*np.cos(angle)**2)
-    return en
+  """
+  Calculate energy from angle
+
+  Args:
+      angle (float): angle of cell
+
+  Returns:
+      float: energy of cell
+  """
+  en = 0.5*(1.0 - 3.0*np.cos(angle)*np.cos(angle))
+  return en
 
 
 @nb.vectorize([nb.float64(nb.float64)], target='parallel')
 def calculate_energies(angle: float) -> float:
-    en = calculate_energies_dummy(angle)
-    return en
+  """
+  calculate energies of an array
+
+  Args:
+      angle (float): angle of cell
+
+  Returns:
+      float: energy of cell
+  """
+  en = calculate_energies_dummy(angle)
+  return en
   
 
 #=======================================================================
 def calc_angles(arr):
+    """
+    calculate angles between cell and adjacent cells
+
+    Args:
+        arr (float(nmax,nmax)) = array that contains lattice data;
+
+    Returns:
+        (float(4)): array that contains angle between cell and each adjacent cell
+    """
 
     ang1 = arr - np.roll(arr, -1, axis=1)
     ang2 = arr - np.roll(arr, 1, axis=1)
@@ -203,20 +237,44 @@ def calc_angles(arr):
 
     angs = np.array([ang1, ang2, ang3, ang4])
     
-    return angs
+    return angs 
 
 
 #=======================================================================
 @nb.njit
 def calc_sum(ens0: float, ens1: float, ens2: float, ens3: float) -> float:
-    en = ens0 + ens1 + ens2 + ens3
-    return en
+  """
+  calculate sum of energies of 4 adjacent cells
+
+  Args:
+      ens0 (float): energy of adjacent cell
+      ens1 (float): energy of adjacent cell
+      ens2 (float): energy of adjacent cell
+      ens3 (float): energy of adjacent cell
+
+  Returns:
+      float: reduced energy
+  """
+  en = ens0 + ens1 + ens2 + ens3
+  return en
 
 
 @nb.vectorize([nb.float64(nb.float64, nb.float64, nb.float64, nb.float64)], target='parallel')
 def sum_ens(ens0,ens1,ens2,ens3):
-    en = calc_sum(ens0,ens1,ens2,ens3)
-    return en
+  """
+  calculate reduced energy of cell
+
+  Args:
+      ens0 (float): energy of adjacent cell
+      ens1 (float): energy of adjacent cell
+      ens2 (float): energy of adjacent cell
+      ens3 (float): energy of adjacent cell
+
+  Returns:
+      float: reduced energy
+  """
+  en = calc_sum(ens0,ens1,ens2,ens3)
+  return en
 
  
 #=======================================================================
@@ -224,9 +282,6 @@ def one_energy_vectorised(arr):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
-	  ix (int) = x lattice coordinate of cell;
-	  iy (int) = y lattice coordinate of cell;
-      nmax (int) = side length of square lattice.
     Description:
       Function that computes the energy of a single cell of the
       lattice taking into account periodic boundaries.  Working with
@@ -236,7 +291,8 @@ def one_energy_vectorised(arr):
 	  en (float) = reduced energy of cell.
     """
     en = np.zeros(arr.shape, dtype=np.float64)
-
+    
+    angs = np.zeros((4,arr.shape[0], arr.shape[0]), dtype=np.float64)
     angs = calc_angles(arr)
     
     ens = calculate_energies(angs)
@@ -258,17 +314,30 @@ def all_energy(arr):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    return np.sum(one_energy_vectorised(arr))
+    enall = np.sum(one_energy_vectorised(arr))
+    return enall
    
   
 #=======================================================================
 @nb.njit
 def get_order_calc(lab, delta, norm_val):
+    """
+    calculate order of system
+
+    Args:
+        lab (arr(2*nmax*nmax)): 2D unit vector for each cell     
+        delta (arr): 2x2 identity matrix
+        norm_val (float): = 2*nmmax*nmax
+
+    Returns:
+        float(2,2): order?
+    """
     Qab = np.zeros((2,2)) 
     
-    lab_square = (3*lab**2)
+    lab_square = (3*lab*lab)
     lab_01_sum = np.sum(3*lab[0]*lab[1])
     
+    # calculate separately to reduce time
     Qab[0,0] = np.sum(lab_square[0] - delta[0,0])
     Qab[0,1] = Qab[1,0] = lab_01_sum 
     Qab[1,1] = np.sum(lab_square[1] - delta[1,1])
@@ -284,6 +353,8 @@ def get_order(arr,nmax, norm_val, delta):
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
       nmax (int) = side length of square lattice.
+      norm_val (float): = 2*nmmax*nmax
+      delta (arr): 2x2 identity matrix
     Description:
       Function to calculate the order parameter of a lattice
       using the Q tensor approach, as in equation (3) of the
@@ -294,12 +365,11 @@ def get_order(arr,nmax, norm_val, delta):
     # Qab = np.zeros((3,3))
     
     #
-    # Generate a 3D unit vector for each cell (i,j) and
-    # put it in a (3,i,j) array.
-    #
-    # lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+    # Generate a 2D unit vector for each cell (i,j) and
+    # put it in a (2,i,j) array.
+
     lab = np.vstack((np.cos(arr),np.sin(arr))).reshape(2,nmax,nmax)
-    # print(lab)
+    
     Qab = get_order_calc(lab, delta, norm_val)
 
     eigenvalues = np.linalg.eig(Qab)[0]
@@ -309,6 +379,16 @@ def get_order(arr,nmax, norm_val, delta):
 #=======================================================================
 @nb.vectorize([nb.float64(nb.float64, nb.float64)], target='parallel') 
 def calc_boltz(arr, Ts):
+  """
+  calculate boltzmann constant
+
+  Args:
+      arr (float): element of energy difference
+      Ts (float): temperature of system
+
+  Returns:
+      _type_: _description_
+  """
   boltz = np.exp( -(arr) / Ts )
   return boltz
   
@@ -316,29 +396,41 @@ def calc_boltz(arr, Ts):
 #=======================================================================
 @nb.njit
 def accept_torf(diff: float, boltz: float, rand_arr: float):
+    """
+    determine if angle should be accepted or not 
+
+    Args:
+        diff (float): energy difference
+        boltz (float): boltzmann factor value
+        rand_arr (float): random value between 0 and 1
+
+    Returns:
+        int: 0 if accepted, 1 if rejected
+    """
+    # accept
     if (diff <= 0) | ( (diff > 0) & (boltz >= rand_arr) ):
       return 0
+    # reject
     else:
       return 1
     
     
 @nb.vectorize([nb.int64(nb.float64, nb.float64, nb.float64)], target='parallel')
 def calc_accepted(diff, boltz, rand_arr):
-    accept_bool = accept_torf(diff, boltz, rand_arr)
-    return accept_bool
+  """
+  determine if angle should be accepted or not 
+
+  Args:
+        diff (float): energy difference
+        boltz (float): boltzmann factor value
+        rand_arr (float): random value between 0 and 1
+
+  Returns:
+      int: 0 if accepted, 1 if rejected
+  """
+  accept_bool = accept_torf(diff, boltz, rand_arr)
+  return accept_bool
   
-
-### currently not used
-@nb.njit
-def calc_new_angle(ang1:float, ang2: float):
-  return ang1 + ang2
-
-@nb.guvectorize([(nb.float64[:,:], nb.float64[:,:], nb.float64[:,:])], '(n,n),(n,n)->(n,n)')
-def calc_angled_array(arr, angles, res):
-    for i in range(arr.shape[0]):
-        for j in range(arr.shape[0]):
-            res[i,j] = calc_new_angle(arr[i,j] , angles[i,j])
-###
   
 #=======================================================================
 def MC_step(arr,Ts,scale,nmax, checkerboards ):
@@ -346,23 +438,19 @@ def MC_step(arr,Ts,scale,nmax, checkerboards ):
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
 	  Ts (float) = reduced temperature (range 0 to 2);
+	  scale (float) = scale for tem;
       nmax (int) = side length of square lattice.
+	  checkerboards(list(arr)) = list of checkerboards: ( white squares, black squars)
+   
     Description:
-      Function to perform one MC step, which consists of an average
-      of 1 attempted change per lattice site.  Working with reduced
-      temperature Ts = kT/epsilon.  Function returns the acceptance
+      Function to perform one MC step.  Function returns the acceptance
       ratio for information.  This is the fraction of attempted changes
       that are successful.  Generally aim to keep this around 0.5 for
       efficient simulation.
 	Returns:
 	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
     """
-    #
-    # Pre-compute some random numbers.  This is faster than
-    # using lots of individual calls.  "scale" sets the width
-    # of the distribution for the angle changes - increases
-    # with temperature.
-    
+   
 
     # Calculate current energy of each cell
     # LONG
@@ -393,7 +481,6 @@ def MC_step(arr,Ts,scale,nmax, checkerboards ):
       
       arr -= aran*board*accepted
     
-    
     num_accepted = np.sum(accepted)
     
     return num_accepted/(nmax*nmax)
@@ -404,7 +491,7 @@ def MC_step(arr,Ts,scale,nmax, checkerboards ):
   
   
 #=======================================================================
-def main(program, nsteps, nmax, temp, pflag):
+def main(program, nsteps, nmax, temp, pflag, threads):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -412,19 +499,29 @@ def main(program, nsteps, nmax, temp, pflag):
       nmax (int) = side length of square lattice to simulate;
 	  temp (float) = reduced temperature (range 0 to 2);
 	  pflag (int) = a flag to control plotting.
+	  threads (int) = number of threads to run script with
     Description:
       This is the main function running the Lebwohl-Lasher simulation.
     Returns:
       NULL
     """
+    
+    nb.set_num_threads(threads)
+    numthreads = nb.get_num_threads()
+    print(f"THREADS: {numthreads}")
+    
+    
     # Create and initialise lattice
     lattice = initdat(nmax)
+    
     # Plot initial frame of lattice
     plotdat(lattice,pflag,nmax)
+    
     # Create arrays to store energy, acceptance ratio and order parameter
     energy = np.zeros(nsteps+1,dtype=np.float64)
     ratio = np.zeros(nsteps+1,dtype=np.float64)
     order = np.zeros(nsteps+1,dtype=np.float64)
+    
     # Set initial values in arrays
     energy[0] = all_energy(lattice)
     ratio[0] = 0.5 # ideal value
@@ -450,9 +547,9 @@ def main(program, nsteps, nmax, temp, pflag):
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
+    
     # Plot final frame of lattice and generate output file
     # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    # plotdat(lattice,pflag,nmax)
     plotdat(lattice,pflag,nmax, True, energy, temp, order, nsteps)
     
     
@@ -461,13 +558,14 @@ def main(program, nsteps, nmax, temp, pflag):
 # main simulation function.
 #
 if __name__ == '__main__':
-    if int(len(sys.argv)) == 5:
+    if int(len(sys.argv)) == 6:
         PROGNAME = sys.argv[0]
         ITERATIONS = int(sys.argv[1])
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
+        THREADS = int(sys.argv[5])
+        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG, THREADS)
     else:
-        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
+        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
 #=======================================================================

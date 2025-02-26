@@ -1,5 +1,30 @@
+"""
+Parallelised Cythonised Python Lebwohl-Lasher code.  Based on the paper 
+P.A. Lebwohl and G. Lasher, Phys. Rev. A, 6, 426-429 (1972).
+This version in 2D.
+
+Run at the command line by typing:
+
+compile
+python setup_parallel_cython.py build_ext -fi
+
+python run_parallel_cython.py <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> 
+
+where:
+  ITERATIONS = number of Monte Carlo steps, where 1MCS is when each cell
+      has attempted a change once on average (i.e. SIZE*SIZE attempts)
+  SIZE = side length of square lattice
+  TEMPERATURE = reduced temperature in range 0.0 - 2.0.
+  PLOTFLAG = 0 for no plot, 1 for energy plot and 2 for angle plot.
+  
+The initial configuration is set at random. The boundaries
+are periodic throughout the simulation.  
+
+"""
+
+
 import sys
-from CythonLebwohlLasher import all_energy_cythonised, get_order_loop, get_lab, MC_step_loop, main_loop
+from CythonLebwohlLasher import all_energy_cythonised, get_order_loop, get_lab, MC_step_loop, MC_step_cythonised, main_loop
 
 import sys
 import time
@@ -26,6 +51,14 @@ def initdat(nmax):
   
 #=======================================================================
 def plot_reduced_e(energy, nsteps, temp):
+  """
+  Plot reduced energy against number of monte carlo steps
+
+  Args:
+      energy (arr): array of reduced energies
+      nsteps (int): number of steps
+      temp (float): temperature of simulation
+  """
   fig, ax = plt.subplots()
   steps = np.arange(0,nsteps+1)
   ax.plot(steps, energy)
@@ -36,6 +69,14 @@ def plot_reduced_e(energy, nsteps, temp):
   
   
 def plot_order(order, nsteps, temp):
+  """
+  Plot of order against number of monte carlo steps
+
+  Args:
+      order (arr): array of order throughout simulation
+      nsteps (int): number of steps
+      temp (float): temperature of simulation
+  """
   fig, ax = plt.subplots()
   steps = np.arange(0,nsteps+1)
   ax.plot(steps, order)
@@ -44,19 +85,9 @@ def plot_order(order, nsteps, temp):
   ax.set_title(f"Reduced Temperature, T* = {temp}")
   plt.show()
   
+ 
   
-def plot_order_vs_temp(order, temp, nmax):
-  # needs error bars
-  fig, ax = plt.subplots()
-  ax.plot(temp, order)
-  ax.set_xlabel("Reduced Temperature, T*")
-  ax.set_ylabel("Order Parameter")
-  ax.set_title(f"{nmax}x{nmax} Lebwohl-Lasher model")
-  plt.show()
-  
-  
-  
-  
+   
 #=======================================================================
 def one_energy(arr,ix,iy,nmax):
     """
@@ -83,22 +114,16 @@ def one_energy(arr,ix,iy,nmax):
     iyu = (iy+1)%nmax # 
     iyd = (iy-1)%nmax #
 #
-# Add together the 4 neighbour contributions
-# to the energy
-#
-
-# HERE
-# PARALLELISE
-    # 
     ang = arr[ix,iy]-arr[ixr,iy]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)*np.cos(ang))
     ang = arr[ix,iy]-arr[ixl,iy]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)*np.cos(ang))
     ang = arr[ix,iy]-arr[ix,iyu]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)*np.cos(ang))
     ang = arr[ix,iy]-arr[ix,iyd]
-    energy += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    energy += 0.5*(1.0 - 3.0*np.cos(ang)*np.cos(ang))
     return energy
+  
   
 #=======================================================================
 def plotdat(arr,pflag,nmax, final_data=False, energy=None, temp=None, order=None, nsteps=None):
@@ -208,11 +233,13 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 
       
 #=======================================================================
-def get_order(arr,nmax, delta, factor): #, threads):
+def get_order(arr,nmax, delta, factor):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
       nmax (int) = side length of square lattice.
+      delta (arr) = identity matrix
+      factor (int) = 2*nmax*nmax
     Description:
       Function to calculate the order parameter of a lattice
       using the Q tensor approach, as in equation (3) of the
@@ -226,51 +253,52 @@ def get_order(arr,nmax, delta, factor): #, threads):
     # put it in a (3,i,j) array.
     #
     lab = np.zeros((2, nmax, nmax), dtype=np.float64)
-    lab = get_lab(lab, arr, nmax)#, threads)
-    Qab = get_order_loop(Qab, nmax, lab, delta, factor)#, threads)
+    lab = get_lab(lab, arr, nmax)
+    Qab = get_order_loop(Qab, nmax, lab, delta, factor)
     eigenvalues = np.linalg.eig(Qab)[0]
     return eigenvalues.max()
   
   
-# #=======================================================================
-# def MC_step(arr,Ts,nmax, scale): #, threads):
-#     """
-#     Arguments:
-# 	  arr (float(nmax,nmax)) = array that contains lattice data;
-# 	  Ts (float) = reduced temperature (range 0 to 2);
-#       nmax (int) = side length of square lattice.
-#     Description:
-#       Function to perform one MC step, which consists of an average
-#       of 1 attempted change per lattice site.  Working with reduced
-#       temperature Ts = kT/epsilon.  Function returns the acceptance
-#       ratio for information.  This is the fraction of attempted changes
-#       that are successful.  Generally aim to keep this around 0.5 for
-#       efficient simulation.
-# 	Returns:
-# 	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
-#     """
-#     #
-#     # Pre-compute some random numbers.  This is faster than
-#     # using lots of individual calls.  "scale" sets the width
-#     # of the distribution for the angle changes - increases
-#     # with temperature.
-#     # std
+#=======================================================================
+def MC_step(arr,Ts,nmax, scale):
+    """
+    Arguments:
+	  arr (float(nmax,nmax)) = array that contains lattice data;
+	  Ts (float) = reduced temperature (range 0 to 2);
+      nmax (int) = side length of square lattice.
+      scale (double) = sets the width of the distribution for the angle changes
+    Description:
+      Function to perform one MC step, which consists of an average
+      of 1 attempted change per lattice site.  Working with reduced
+      temperature Ts = kT/epsilon.  Function returns the acceptance
+      ratio for information.  This is the fraction of attempted changes
+      that are successful.  Generally aim to keep this around 0.5 for
+      efficient simulation.
+	Returns:
+	  accept/(nmax**2) (float) = acceptance ratio for current MCS.
+    """
+    #
+    # Pre-compute some random numbers.  This is faster than
+    # using lots of individual calls.  "scale" sets the width
+    # of the distribution for the angle changes - increases
+    # with temperature.
+    # std
     
-#     accept = 0
-#     aran = np.random.normal(scale=scale, size=(nmax,nmax))
-#     boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
+    accept = 0
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    boltzran = np.random.uniform(0.0, 1.0, size=(nmax, nmax))
     
-#     accept = MC_step_loop(aran, nmax, arr, Ts, boltzran)#, threads)
+    accept = MC_step_loop(aran, nmax, arr, Ts, boltzran)
     
-#     # print(arr)                
-#     # print(f"accepted: {accept}")
-#     return accept/(nmax*nmax)
+    # print(arr)                
+    # print(f"accepted: {accept}")
+    return accept/(nmax*nmax)
   
   
 
   
 #=======================================================================
-def main(program, nsteps, nmax, temp, pflag):#, threads):
+def main(program, nsteps, nmax, temp, pflag):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -299,12 +327,13 @@ def main(program, nsteps, nmax, temp, pflag):#, threads):
     delta = np.eye(2,2, dtype = np.float64)
     scale=0.1+temp
     factor = 2*nmax*nmax
-    order[0] = get_order(lattice,nmax, delta, factor) #, threads)
+    order[0] = get_order(lattice,nmax, delta, factor)
 
     # Begin doing and timing some MC steps.
     initial = time.time()
     for it in range(1,nsteps+1):
-        ratio[it], energy[it] = main_loop(lattice,temp,nmax, scale)
+        ratio[it] = MC_step(lattice,temp,nmax, scale)
+        energy[it] = all_energy_cythonised(lattice,nmax)
         order[it] = get_order(lattice, nmax, delta, factor)
         
     # plot_reduced_e(energy, nsteps, temp)
@@ -331,11 +360,10 @@ if __name__ == '__main__':
         SIZE = int(sys.argv[2])
         TEMPERATURE = float(sys.argv[3])
         PLOTFLAG = int(sys.argv[4])
-        #THREADS = int(sys.argv[5])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)#, THREADS)
+        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
     else:
-        # print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>".format(sys.argv[0]))
         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
+        # print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
 #=======================================================================
 
 
