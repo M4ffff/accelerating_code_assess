@@ -68,3 +68,13 @@ SETUP INSTRUCTIONS
 python setup_mpi_cython.py build_ext -fi
 mpiexec -n <num_cores> python run_mpi_cython.py <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>
 
+
+
+- making_pkls.ipynb
+Jupyter notebook to produce and save files to be plotted.
+
+
+
+- plotting_script.ipynb
+Script used to load in relevant data files and plot them. 
+
