@@ -70,7 +70,7 @@ python setup_parallel_cython.py build_ext -fi
 python run_parallel_cython.py <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG> <THREADS>
 ```
 
-*** note number of threads needed ***
+*** note number of threads needs to be included in command line ***
 
 - mpiCythonLebwohlLasher.pyx / run_mpi_cython.py / setup_mpi_cython.py
 Script based on mpi4pyLebwohlLasher.py but with some functions cythonised. 
