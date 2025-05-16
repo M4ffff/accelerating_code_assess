@@ -62,6 +62,7 @@ mpiexec -n <num_cores> python mpi4pyLebwohlLasher.py <ITERATIONS> <SIZE> <TEMPER
 ```
 
 - ParallelCythonLebwohlLasher.pyx / run_parallel_cython.py / setup_parallel_cython.py
+  
 Very similar to CythonLebwohlLasher.pyx, but parallelised. 
 
 ```python
@@ -83,6 +84,7 @@ mpiexec -n <num_cores> python run_mpi_cython.py <ITERATIONS> <SIZE> <TEMPERATURE
 ```
 
 - making_pkls.ipynb
+
 Jupyter notebook to produce and save files to be plotted.
 
 - plotting_script.ipynb
